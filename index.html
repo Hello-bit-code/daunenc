@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daun Bus</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions.js"></script>
+</head>
+<body>
+    <h1>Welcome to Daun Bus App</h1>
+    <div>
+        <h2>탑승자 인원 입력</h2>
+        <input type="number" id="passengerCount" placeholder="탑승자 수">
+        <button onclick="submitPassengerCount()">Submit</button>
+    </div>
+    <div>
+        <h2>기사용 페이지</h2>
+        <input type="password" id="driverPassword" placeholder="비밀번호 입력">
+        <button onclick="checkDriverPassword()">확인</button>
+        <div id="driverInfo"></div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
