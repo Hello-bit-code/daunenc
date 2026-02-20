@@ -93,7 +93,7 @@
     input::placeholder{ color: rgba(148,163,184,.62); }
 
     textarea{
-      min-height: 170px;
+      min-height: 190px;
       resize: vertical;
       font-family: var(--mono);
       font-size: 12.5px;
@@ -289,6 +289,7 @@
 
     <div class="hint" style="margin-bottom:10px;">
       ‘작업 추가’는 <b>기본 정보 세트(도면/날짜/공정지역/메모)</b>가 하나 더 생성됩니다.
+      결과는 <b>항상 전체 작업</b>을 한 번에 출력합니다.
     </div>
 
     <div class="works" id="works"></div>
@@ -299,22 +300,20 @@
     <div class="cardHead">
       <div class="left">
         <h2>금일 작업 결과(카톡용)</h2>
-        <span class="pill">선택/전체 출력</span>
+        <span class="pill">전체 작업 출력</span>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn" id="btnCopy">내용 복사</button>
       </div>
     </div>
 
-    <textarea id="output" readonly placeholder="‘선택 작업 결과 생성’ 또는 ‘전체 작업 결과 생성’을 누르세요."></textarea>
+    <textarea id="output" readonly placeholder="‘전체 작업 결과 생성’을 누르면 모든 작업이 한 번에 작성됩니다."></textarea>
 
     <div class="hr"></div>
 
     <div class="bar">
       <div class="hint">복사 후 카톡에 붙여넣기 하세요.</div>
       <div class="barRight">
-        <span class="pill">선택: <strong id="selectedWorkLabel">-</strong></span>
-        <button class="btn" id="btnGenerateSelected">선택 작업 결과 생성</button>
         <button class="btn primary" id="btnGenerateAll">전체 작업 결과 생성</button>
       </div>
     </div>
@@ -421,8 +420,8 @@
     return { pretty: s };
   }
 
-  const LS_KEY = "worklog_offline_multiwork_v2";
-  const state = { works: [], selectedWorkId: "" };
+  const LS_KEY = "worklog_offline_multiwork_all_v1";
+  const state = { works: [] };
 
   function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 
@@ -431,9 +430,8 @@
   }
   function newGroup(){ return { areaDetail:"", items:[ newMaterial() ] }; }
   function newWork(){
-    const id = uid();
     return {
-      id,
+      id: uid(),
       drawing: "",
       date: todayISO(),
       area: "",
@@ -449,22 +447,16 @@
       try{
         const data = JSON.parse(raw);
         if(data && Array.isArray(data.works)) state.works = data.works;
-        if(data && typeof data.selectedWorkId === "string") state.selectedWorkId = data.selectedWorkId;
       }catch(e){}
     }
     if(state.works.length === 0){
-      const w = newWork();
-      state.works.push(w);
-      state.selectedWorkId = w.id;
+      state.works.push(newWork());
       saveLS();
-    }
-    if(!state.selectedWorkId || !state.works.some(w => w.id === state.selectedWorkId)){
-      state.selectedWorkId = state.works[0].id;
     }
   }
 
   function saveLS(){
-    localStorage.setItem(LS_KEY, JSON.stringify({ works: state.works, selectedWorkId: state.selectedWorkId }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ works: state.works }));
   }
 
   function pushUnique(arr, val, max=80){
@@ -476,14 +468,8 @@
     if(arr.length > max) arr.length = max;
   }
 
-  function selectedWork(){
-    return state.works.find(w => w.id === state.selectedWorkId) || state.works[0];
-  }
-
   function updateCounts(){
     $("#countWorks").textContent = String(state.works.length);
-    const sw = selectedWork();
-    $("#selectedWorkLabel").textContent = sw ? `작업 ${state.works.findIndex(x=>x.id===sw.id)+1}` : "-";
   }
 
   function ensureWorkHasAtLeastOneGroup(w){
@@ -495,8 +481,6 @@
     host.innerHTML = "";
 
     state.works.forEach((w, wi) => {
-      const isSel = w.id === state.selectedWorkId;
-
       const workEl = document.createElement("div");
       workEl.className = "work";
       workEl.dataset.w = w.id;
@@ -508,10 +492,8 @@
           <div class="left">
             <div class="workTitle">작업 ${wi+1}</div>
             <div class="tag">구역 ${groupCount}개</div>
-            <div class="tag">${isSel ? "선택됨" : "미선택"}</div>
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn small js-selectWork" type="button">${isSel ? "선택됨" : "이 작업 선택"}</button>
             <button class="btn small danger js-delWork" type="button">작업 삭제</button>
           </div>
         </div>
@@ -636,7 +618,7 @@
               <div class="field half" style="grid-column: span 1;">
                 <label>단위</label>
                 <select class="js-unit">
-                  ${["EA","M","SET","POINT","ROLL","PCS","본"].map(u => `<option value="${u}" ${u===it.unit ? "selected":""}>${u}</option>`).join("")}
+                  ${UNIT_OPTIONS.map(u => `<option value="${u}" ${u===it.unit ? "selected":""}>${u}</option>`).join("")}
                 </select>
               </div>
 
@@ -668,9 +650,7 @@
   }
 
   function addWork(){
-    const w = newWork();
-    state.works.push(w);
-    state.selectedWorkId = w.id;
+    state.works.push(newWork());
     render();
     toast("작업을 추가했습니다.");
   }
@@ -695,14 +675,13 @@
     toast("자재를 추가했습니다. (마지막 구역)");
   }
 
-  // ✅ 출력: 작업 1건
-  function generateOutputForWork(w){
-    if(!w) return "";
+  function generateOutputForWork(w, idx){
     const date = w.date || todayISO();
     const drawing = (w.drawing||"").trim();
     const baseArea = (w.area||"").trim() || "(미지정)";
 
     const header = [
+      `==== 작업 ${idx+1} ====`,
       `[금일 작업내용]${drawing ? ` (도면: ${drawing})` : ""}`,
       `- 공정지역: ${baseArea}`,
       w.memo ? `- 메모: ${w.memo}` : null,
@@ -725,7 +704,6 @@
         const unit = (it.unit||"").trim();
         const note = (it.note||"").trim();
 
-        // ✅ “수량만 입력” 같은 케이스도 누락되지 않게 조건 완화
         const isEmpty = !mat && !specPretty && !qty && !note && !areaDetail;
         if(isEmpty) return;
 
@@ -743,15 +721,8 @@
     return header + body;
   }
 
-  // ✅ 출력: 전체 작업(모든 기본정보 세트)
   function generateOutputAllWorks(){
-    const blocks = [];
-    state.works.forEach((w, idx) => {
-      const block = generateOutputForWork(w);
-      // 작업 구분 라벨(카톡에서 보기 좋게)
-      blocks.push(`==== 작업 ${idx+1} ====\n` + block);
-    });
-    return blocks.join("\n\n");
+    return state.works.map((w, idx) => generateOutputForWork(w, idx)).join("\n\n");
   }
 
   async function copyToClipboard(text){
@@ -779,12 +750,6 @@
     $("#btnSaveAll").addEventListener("click", () => {
       saveLS();
       toast("저장했습니다. (이 기기 저장)");
-    });
-
-    $("#btnGenerateSelected").addEventListener("click", () => {
-      const w = selectedWork();
-      $("#output").value = generateOutputForWork(w);
-      toast("선택 작업 결과를 생성했습니다.");
     });
 
     $("#btnGenerateAll").addEventListener("click", () => {
@@ -816,23 +781,10 @@
       const w = state.works.find(x => x.id === workId);
       if(!w) return;
 
-      if(e.target.closest(".js-selectWork")){
-        state.selectedWorkId = workId;
-        render();
-        toast("선택 작업을 변경했습니다.");
-        return;
-      }
-
       if(e.target.closest(".js-delWork")){
         const idx = state.works.findIndex(x => x.id === workId);
         state.works.splice(idx, 1);
-        if(state.works.length === 0){
-          const nw = newWork();
-          state.works.push(nw);
-          state.selectedWorkId = nw.id;
-        }else if(state.selectedWorkId === workId){
-          state.selectedWorkId = state.works[0].id;
-        }
+        if(state.works.length === 0) state.works.push(newWork());
         render();
         toast("작업을 삭제했습니다.");
         return;
