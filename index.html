@@ -1,28 +1,894 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daun Bus</title>
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>오프라인 물량/작업 보고</title>
+
+  <style>
+    :root{
+      --bg:#0b1020;
+      --surface: rgba(17, 24, 39, .86);
+      --surface2: rgba(15, 23, 42, .72);
+      --line: rgba(51, 65, 85, .62);
+
+      --text:#e5e7eb;
+      --muted: rgba(148, 163, 184, .92);
+
+      --accent:#60a5fa;
+      --accent2:#34d399;
+      --danger:#fb7185;
+
+      --shadow: 0 20px 48px rgba(0,0,0,.42);
+      --radius: 18px;
+      --radius2: 14px;
+
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+              "Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+
+    body{
+      margin:0;
+      font-family: var(--sans);
+      color: var(--text);
+      letter-spacing: -0.2px;
+      background:
+        radial-gradient(1200px 780px at 20% 10%, rgba(96,165,250,.18), transparent 55%),
+        radial-gradient(900px 560px at 90% 20%, rgba(52,211,153,.12), transparent 55%),
+        radial-gradient(900px 560px at 40% 95%, rgba(251,113,133,.10), transparent 60%),
+        var(--bg);
+    }
+
+    .wrap{
+      max-width: 1120px;
+      margin: 22px auto 70px;
+      padding: 0 18px;
+    }
+
+    /* Header */
+    .topbar{
+      display:flex;
+      gap: 14px;
+      align-items:flex-start;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .brand{
+      display:flex;
+      gap: 12px;
+      align-items:center;
+    }
+    .logo{
+      width: 44px; height: 44px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(96,165,250,.95), rgba(52,211,153,.86));
+      box-shadow: 0 14px 34px rgba(96,165,250,.22);
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .logo:after{
+      content:"";
+      position:absolute;
+      inset: 10px;
+      border-radius: 12px;
+      background: rgba(17,24,39,.86);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .title h1{
+      margin:0;
+      font-size: 18px;
+      line-height: 1.15;
+    }
+    .title .sub{
+      margin-top: 5px;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .actions{
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    /* Card */
+    .card{
+      background: linear-gradient(180deg, var(--surface), var(--surface2));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .card + .card{ margin-top: 14px; }
+
+    .cardHead{
+      display:flex;
+      gap: 12px;
+      align-items:center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .cardHead .left{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .cardHead h2{
+      margin:0;
+      font-size: 14.5px;
+    }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(11, 15, 26, .35);
+      font-size: 12px;
+      color: var(--muted);
+      user-select:none;
+      white-space: nowrap;
+    }
+    .pill strong{ color: var(--text); font-weight: 700; }
+
+    /* Form */
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+    }
+    .field label{
+      display:block;
+      margin: 0 0 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    input, select, textarea{
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(51,65,85,.85);
+      background: rgba(11,15,26,.48);
+      color: var(--text);
+      outline: none;
+      transition: border .15s ease, background .15s ease;
+    }
+    input:focus, select:focus, textarea:focus{
+      border-color: rgba(96,165,250,.85);
+      background: rgba(11,15,26,.62);
+    }
+    input::placeholder{ color: rgba(148,163,184,.62); }
+
+    textarea{
+      min-height: 124px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.5;
+      white-space: pre;
+    }
+
+    .hint{
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .hr{
+      height: 1px;
+      background: rgba(51,65,85,.75);
+      margin: 14px 0;
+    }
+
+    /* Buttons */
+    .btn{
+      border: 1px solid rgba(51,65,85,.85);
+      background: rgba(11,15,26,.50);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 13px;
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      white-space: nowrap;
+      transition: border .15s ease, background .15s ease, transform .05s ease;
+    }
+    .btn:hover{
+      border-color: rgba(96,165,250,.55);
+      background: rgba(11,15,26,.72);
+    }
+    .btn:active{ transform: translateY(1px); }
+    .btn.primary{
+      border-color: transparent;
+      background: linear-gradient(135deg, rgba(96,165,250,.98), rgba(52,211,153,.86));
+      color: #07101d;
+      font-weight: 800;
+    }
+    .btn.danger{
+      border-color: rgba(251,113,133,.55);
+    }
+    .btn.ghost{ background: transparent; }
+    .btn.small{
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 12.5px;
+    }
+
+    /* Items */
+    .items{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .item{
+      border: 1px solid rgba(51,65,85,.75);
+      border-radius: var(--radius2);
+      background: rgba(11,15,26,.34);
+      padding: 12px;
+    }
+    .itemGrid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 10px;
+      align-items: end;
+    }
+    .chips{
+      display:flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .chip{
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(51,65,85,.70);
+      background: rgba(17,24,39,.62);
+      color: var(--muted);
+    }
+    .chip b{ color: var(--text); }
+
+    .bar{
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Toast */
+    .toast{
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%);
+      background: rgba(17,24,39,.92);
+      border: 1px solid rgba(51,65,85,.85);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      display:none;
+      font-size: 13px;
+      max-width: min(720px, calc(100% - 24px));
+      z-index: 9999;
+    }
+
+    @media (max-width: 980px){
+      .topbar{ flex-direction: column; align-items:flex-start; }
+      .actions{ justify-content:flex-start; }
+    }
+  </style>
 </head>
+
 <body>
-    <h1>Welcome to Daun Bus App</h1>
-    <div>
-        <h2>탑승자 인원 입력</h2>
-        <input type="number" id="passengerCount" placeholder="탑승자 수">
-        <button onclick="submitPassengerCount()">Submit</button>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo"></div>
+      <div class="title">
+        <h1>오프라인 물량/작업 보고</h1>
+        <div class="sub">서버 없이 사용 · 자동 표준화(한/영/오타) · 카톡용 결과 자동 생성 · 기기(LocalStorage) 저장</div>
+      </div>
     </div>
-    <div>
-        <h2>기사용 페이지</h2>
-        <input type="password" id="driverPassword" placeholder="비밀번호 입력">
-        <button onclick="checkDriverPassword()">확인</button>
-        <div id="driverInfo"></div>
+
+    <div class="actions">
+      <button class="btn ghost" id="btnExport">내보내기(JSON)</button>
+      <button class="btn ghost" id="btnImport">가져오기(JSON)</button>
+      <button class="btn danger" id="btnReset">초기화</button>
     </div>
-    <script src="app.js"></script>
+  </div>
+
+  <!-- 1) Header -->
+  <section class="card">
+    <div class="cardHead">
+      <div class="left">
+        <h2>기본 정보</h2>
+        <span class="pill"><strong>입력 팁</strong> 규격: 300*150*3000 / 300×150×3000 / 300x150x3000</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="field" style="grid-column: span 6;">
+        <label>도면 Num. (텍스트 입력 + 자동완성)</label>
+        <input id="drawing" placeholder="예: 2153-EL-CTL-0001 Rev.1" list="drawingList" />
+        <datalist id="drawingList"></datalist>
+      </div>
+
+      <div class="field" style="grid-column: span 3;">
+        <label>날짜</label>
+        <input id="date" type="date" />
+      </div>
+
+      <div class="field" style="grid-column: span 3;">
+        <label>공정지역(Area)</label>
+        <input id="area" placeholder="예: PIPE RACK / SUBSTATION / 전기실 1층" list="areaList" />
+        <datalist id="areaList"></datalist>
+      </div>
+
+      <div class="field" style="grid-column: span 12;">
+        <label>메모(선택)</label>
+        <input id="memo" placeholder="예: 우천 / 야간 / 특이사항" />
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="bar">
+      <div class="hint">저장/자동완성은 이 기기(LocalStorage)에만 남습니다. 공유가 필요하면 JSON 내보내기/가져오기(병합)를 사용하세요.</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn" id="btnAddItem">+ 자재/작업 추가</button>
+        <button class="btn" id="btnSave">저장</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2) Items -->
+  <section class="card">
+    <div class="cardHead">
+      <div class="left">
+        <h2>작업구역 및 자재사용내역</h2>
+        <span class="pill"><strong id="countItems">0</strong> 건</span>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn" id="btnAddItem2">+ 추가</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-bottom:10px;">
+      자재명은 한글/영어/오타 입력 가능 → 표준 영문명/카테고리 자동 지정. (기본 자재명 자동완성: 통합문서1 기반)
+    </div>
+    <div class="items" id="items"></div>
+  </section>
+
+  <!-- 3) Output -->
+  <section class="card">
+    <div class="cardHead">
+      <div class="left">
+        <h2>금일 작업 결과(카톡 복사용)</h2>
+        <span class="pill">자동 포맷</span>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn" id="btnCopy">내용 복사</button>
+      </div>
+    </div>
+
+    <textarea id="output" readonly placeholder="아래 ‘카톡용 결과 생성’ 버튼을 누르면 자동으로 작성됩니다."></textarea>
+
+    <div class="hr"></div>
+
+    <div class="bar">
+      <div class="hint">생성된 텍스트를 그대로 복사해서 단톡방에 붙여넣으면 됩니다.</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn primary" id="btnGenerate">카톡용 결과 생성</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 통합문서1 기반 자재명 자동완성(option 삽입해서 배포 권장) -->
+<datalist id="materialBaseList"></datalist>
+
+<script>
+(() => {
+  const UNIT_OPTIONS = ["EA","M","SET","POINT","ROLL","PCS","본"];
+  const CATEGORY_OPTIONS = ["TRAY","CONDUIT","ELP","SUPPORT","CHANNEL","ANGLE","FITTING","BOX","FASTENER","PAINT","OTHER"];
+  const DEFAULT_AREAS = ["PIPE RACK","전기실 1층","전기실 2층","SUBSTATION","UG","TK AREA","에틸렌 B구역"];
+
+  const MATERIAL_DICT = [
+    { aliases:["전선관","스틸 전선관","STEEL CONDUIT","STEEL CONDUIT PIPE","CONDUIT","CONDUIT PIPE","STEEL PIPE","PIPE"], canonical:"STEEL CONDUIT", category:"CONDUIT"},
+    { aliases:["CD","CD관","CD PIPE","CD CONDUIT","22C","28C","36C","54C"], canonical:"CD CONDUIT", category:"CONDUIT"},
+    { aliases:["후렉시블","후렉쉬블","FLEX","FLEXIBLE","FLEXIBLE CONDUIT"], canonical:"FLEXIBLE CONDUIT", category:"CONDUIT"},
+    { aliases:["ELP","ELP 배관","ELP PIPE"], canonical:"ELP", category:"ELP"},
+    { aliases:["유니온","UNION"], canonical:"UNION", category:"FITTING"},
+    { aliases:["레듀샤","REDUCER","REDUCER LEFT","REDUCER RIGHT"], canonical:"REDUCER", category:"FITTING"},
+    { aliases:["클램프","CLAMP"], canonical:"CLAMP", category:"FASTENER"},
+    { aliases:["접지","GROUND","GV","GROUNDING"], canonical:"GROUNDING", category:"OTHER"},
+    { aliases:["트레이","케이블트레이","CABLE TRAY","TRAY","CABLETRAY"], canonical:"CABLE TRAY", category:"TRAY"},
+    { aliases:["엔드캡","END CAP","ENDCAP"], canonical:"END CAP", category:"TRAY"},
+    { aliases:["조인트","JOINT"], canonical:"JOINT", category:"TRAY"},
+    { aliases:["러그","LUG","EARTH LUG","GROUND LUG"], canonical:"GROUND LUG", category:"TRAY"},
+    { aliases:["서포트","SUPPORT","LIGHTING SUPPORT","TRAY SUPPORT"], canonical:"SUPPORT", category:"SUPPORT"},
+    { aliases:["찬넬","채널","CHANNEL","U CHANNEL","U-CHANNEL","DOUBLE CHANNEL","C CHANNEL","C-CHANNEL"], canonical:"CHANNEL", category:"CHANNEL"},
+    { aliases:["앵글","ANGLE"], canonical:"ANGLE", category:"ANGLE"},
+    { aliases:["포스트베이스","POST BASE","BASE","POSTBASE"], canonical:"POST BASE", category:"SUPPORT"},
+    { aliases:["라운드박스","ROUND BOX"], canonical:"ROUND BOX", category:"BOX"},
+    { aliases:["풀박스","PULL BOX","FULL BOX"], canonical:"PULL BOX", category:"BOX"},
+    { aliases:["도장","페인트","PAINT","COATING"], canonical:"PAINT", category:"PAINT"},
+  ];
+
+  const $ = (sel) => document.querySelector(sel);
+
+  function toast(msg){
+    const t = $("#toast");
+    t.textContent = msg;
+    t.style.display = "block";
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(()=> t.style.display = "none", 2200);
+  }
+
+  function todayISO(){
+    const d = new Date();
+    const tz = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tz).toISOString().slice(0,10);
+  }
+
+  function normalizeText(s){
+    return (s||"").trim().replace(/\s+/g, " ").toUpperCase();
+  }
+
+  function escapeHtml(s){
+    return String(s||"")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+
+  function mapMaterial(input){
+    const raw = (input||"").trim();
+    if(!raw) return { canonical:"", category:"", confidence:"" };
+
+    // 휴리스틱: "28C" 같은 표기 → CD CONDUIT
+    if(/^\d+(?:\.\d+)?\s*C$/i.test(raw)){
+      return { canonical:"CD CONDUIT", category:"CONDUIT", confidence:"자동분류" };
+    }
+
+    const up = normalizeText(raw);
+    const compact = up.replace(/[\s\-_/]/g, "");
+
+    for(const entry of MATERIAL_DICT){
+      for(const a of entry.aliases){
+        const au = normalizeText(a);
+        if(up === au) return { canonical: entry.canonical, category: entry.category, confidence:"정확" };
+      }
+    }
+    for(const entry of MATERIAL_DICT){
+      for(const a of entry.aliases){
+        const au = normalizeText(a);
+        if(au && up.includes(au)) return { canonical: entry.canonical, category: entry.category, confidence:"포함" };
+      }
+    }
+    for(const entry of MATERIAL_DICT){
+      for(const a of entry.aliases){
+        const au = normalizeText(a).replace(/[\s\-_/]/g, "");
+        if(au && compact.includes(au)) return { canonical: entry.canonical, category: entry.category, confidence:"유사" };
+      }
+    }
+
+    return { canonical: raw.toUpperCase(), category:"OTHER", confidence:"원문" };
+  }
+
+  function parseSpec(spec){
+    const s = (spec||"").trim();
+    if(!s) return { parts:[], pretty:"" };
+
+    // 300*150*3000 / 300×150×3000 / 300x150x3000
+    const m = s.replace(/,/g,"").match(/^(\d+(?:\.\d+)?)\s*[xX×\*]\s*(\d+(?:\.\d+)?)\s*(?:[xX×\*]\s*(\d+(?:\.\d+)?))?\s*$/);
+    if(m){
+      const parts = [m[1], m[2]].concat(m[3] ? [m[3]] : []);
+      return { parts, pretty: parts.join("×") };
+    }
+    return { parts:[], pretty: s };
+  }
+
+  // Storage
+  const LS_KEY = "worklog_offline_pretty_theme_v1";
+  const state = {
+    drawing: "",
+    date: todayISO(),
+    area: "",
+    memo: "",
+    items: [],
+    history: { drawings: [], areas: DEFAULT_AREAS.slice() }
+  };
+
+  function load(){
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){
+      try{ Object.assign(state, JSON.parse(raw)); }catch(e){}
+    }
+    if(!state.date) state.date = todayISO();
+    if(!Array.isArray(state.items)) state.items = [];
+    if(!state.history) state.history = { drawings: [], areas: DEFAULT_AREAS.slice() };
+    if(!Array.isArray(state.history.areas) || state.history.areas.length===0) state.history.areas = DEFAULT_AREAS.slice();
+  }
+
+  function save(){
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  }
+
+  function pushUnique(arr, val, max=80){
+    val = (val||"").trim();
+    if(!val) return;
+    const idx = arr.findIndex(v => normalizeText(v) === normalizeText(val));
+    if(idx >= 0) arr.splice(idx,1);
+    arr.unshift(val);
+    if(arr.length > max) arr.length = max;
+  }
+
+  function renderLists(){
+    $("#drawingList").innerHTML = state.history.drawings.map(x => `<option value="${escapeHtml(x)}"></option>`).join("");
+    $("#areaList").innerHTML = state.history.areas.map(x => `<option value="${escapeHtml(x)}"></option>`).join("");
+  }
+
+  function newItem(){
+    return { area:"", materialInput:"", canonical:"", category:"OTHER", spec:"", qty:"", unit:"EA", note:"" };
+  }
+
+  function renderItems(){
+    const host = $("#items");
+    host.innerHTML = "";
+
+    state.items.forEach((it, idx) => {
+      const mapped = mapMaterial(it.materialInput);
+      if(it.materialInput){
+        it.canonical = mapped.canonical;
+        it.category = (it.category && it.category !== "OTHER") ? it.category : mapped.category;
+      }
+
+      const specPretty = parseSpec(it.spec).pretty;
+
+      const el = document.createElement("div");
+      el.className = "item";
+      el.dataset.i = String(idx);
+
+      el.innerHTML = `
+        <div class="itemGrid">
+          <div class="field" style="grid-column: span 2;">
+            <label>작업구역(선택)</label>
+            <input class="js-area" placeholder="(상단 공정지역 사용)" list="areaList" value="${escapeHtml(it.area||"")}" />
+          </div>
+
+          <div class="field" style="grid-column: span 3;">
+            <label>자재명(자유 입력)</label>
+            <input class="js-mat" placeholder="예: 전선관 / CABLE TRAY / U CHANNEL" list="materialBaseList" value="${escapeHtml(it.materialInput||"")}" />
+          </div>
+
+          <div class="field" style="grid-column: span 2;">
+            <label>표준 자재명(자동)</label>
+            <input class="js-canon" value="${escapeHtml(it.canonical||"")}" readonly />
+          </div>
+
+          <div class="field" style="grid-column: span 1;">
+            <label>카테고리</label>
+            <select class="js-cat">
+              ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${c===it.category ? "selected":""}>${c}</option>`).join("")}
+            </select>
+          </div>
+
+          <div class="field" style="grid-column: span 2;">
+            <label>규격(Spec)</label>
+            <input class="js-spec" placeholder="예: 600*150*3000 / 28MM / 28C" value="${escapeHtml(it.spec||"")}" />
+          </div>
+
+          <div class="field" style="grid-column: span 1;">
+            <label>수량</label>
+            <input class="js-qty" inputmode="decimal" placeholder="예: 12" value="${escapeHtml(it.qty||"")}" />
+          </div>
+
+          <div class="field" style="grid-column: span 1;">
+            <label>단위</label>
+            <select class="js-unit">
+              ${UNIT_OPTIONS.map(u => `<option value="${u}" ${u===it.unit ? "selected":""}>${u}</option>`).join("")}
+            </select>
+          </div>
+
+          <div class="field" style="grid-column: span 11;">
+            <label>구간/비고(선택)</label>
+            <input class="js-note" placeholder="예: 구간 30~32 / Column 8~25 / welding" value="${escapeHtml(it.note||"")}" />
+          </div>
+
+          <div style="grid-column: span 1; display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn small js-dup" type="button">복제</button>
+            <button class="btn small danger js-del" type="button">삭제</button>
+          </div>
+        </div>
+
+        <div class="chips">
+          <span class="chip"><b>#</b> ${idx+1}</span>
+          <span class="chip"><b>매핑</b> <span class="js-map">${escapeHtml(mapped.confidence || "-")}</span></span>
+          <span class="chip"><b>규격</b> <span class="js-specpretty">${escapeHtml(specPretty || "-")}</span></span>
+        </div>
+      `;
+
+      host.appendChild(el);
+    });
+
+    $("#countItems").textContent = String(state.items.length);
+  }
+
+  // 입력 중 리렌더링 최소화(입력 끊김 방지)
+  function bindItemEvents(){
+    const host = $("#items");
+
+    host.addEventListener("input", (e) => {
+      const itemEl = e.target.closest(".item");
+      if(!itemEl) return;
+      const i = Number(itemEl.dataset.i);
+      const it = state.items[i];
+      if(!it) return;
+
+      if(e.target.classList.contains("js-area")) it.area = e.target.value;
+
+      if(e.target.classList.contains("js-mat")){
+        it.materialInput = e.target.value;
+        const mapped = mapMaterial(it.materialInput);
+        it.canonical = mapped.canonical;
+        it.category = mapped.category;
+
+        itemEl.querySelector(".js-canon").value = it.canonical;
+        itemEl.querySelector(".js-map").textContent = mapped.confidence || "-";
+        itemEl.querySelector(".js-cat").value = it.category || "OTHER";
+      }
+
+      if(e.target.classList.contains("js-spec")){
+        it.spec = e.target.value;
+        itemEl.querySelector(".js-specpretty").textContent = parseSpec(it.spec).pretty || "-";
+      }
+
+      if(e.target.classList.contains("js-qty")) it.qty = e.target.value;
+      if(e.target.classList.contains("js-note")) it.note = e.target.value;
+
+      save();
+    });
+
+    host.addEventListener("change", (e) => {
+      const itemEl = e.target.closest(".item");
+      if(!itemEl) return;
+      const i = Number(itemEl.dataset.i);
+      const it = state.items[i];
+      if(!it) return;
+
+      if(e.target.classList.contains("js-cat")) it.category = e.target.value;
+      if(e.target.classList.contains("js-unit")) it.unit = e.target.value;
+
+      save();
+    });
+
+    host.addEventListener("click", (e) => {
+      const itemEl = e.target.closest(".item");
+      if(!itemEl) return;
+      const i = Number(itemEl.dataset.i);
+
+      if(e.target.closest(".js-del")){
+        state.items.splice(i,1);
+        if(state.items.length === 0) state.items.push(newItem()); // 최소 1건 유지
+        save();
+        renderItems();
+        toast("삭제했습니다.");
+      }
+
+      if(e.target.closest(".js-dup")){
+        const copy = JSON.parse(JSON.stringify(state.items[i]));
+        state.items.splice(i+1, 0, copy);
+        save();
+        renderItems();
+        toast("복제했습니다.");
+      }
+    });
+  }
+
+  function generateOutput(){
+    const date = state.date || todayISO();
+    const drawing = (state.drawing||"").trim();
+    const baseArea = (state.area||"").trim() || "(미지정)";
+
+    const header = [
+      `[금일 작업내용]${drawing ? ` (도면: ${drawing})` : ""}`,
+      `- 공정지역: ${baseArea}`,
+      state.memo ? `- 메모: ${state.memo}` : null,
+      `- 날짜: ${date}`,
+      ``
+    ].filter(Boolean).join("\n");
+
+    const lines = state.items.map((it) => {
+      const mat = (it.materialInput||"").trim();
+      const mapped = mapMaterial(mat);
+      const canonical = (it.canonical||mapped.canonical||"").trim();
+
+      const specPretty = parseSpec(it.spec).pretty;
+      const qty = (it.qty||"").toString().trim();
+      const unit = (it.unit||"").trim();
+      const note = (it.note||"").trim();
+      const area = (it.area||"").trim();
+
+      const isEmpty = !mat && !canonical && !specPretty && !qty && !note;
+      if(isEmpty) return null;
+
+      const areaPart = area ? ` [${area}]` : "";
+      const specPart = specPretty ? ` ${specPretty}` : "";
+      const qtyPart = (qty && unit) ? `  ${qty}${unit}` : (qty ? `  ${qty}` : "");
+      const notePart = note ? `  (${note})` : "";
+
+      return `${areaPart} ${canonical}${specPart}${qtyPart}${notePart}`.replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
+
+    const body = lines.length
+      ? lines.map((line, idx) => `${idx+1}) ${line}`.replace(/\s+/g, " ").trim()).join("\n")
+      : "(자재/작업 내역이 없습니다)";
+
+    return header + body;
+  }
+
+  function downloadFile(filename, text){
+    const blob = new Blob([text], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function pickFile(){
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.onchange = () => resolve(input.files?.[0] || null);
+      input.click();
+    });
+  }
+
+  async function importJSON(){
+    const f = await pickFile();
+    if(!f) return;
+
+    const text = await f.text();
+    try{
+      const obj = JSON.parse(text);
+
+      // 병합 정책: header는 덮어쓰기, items는 append
+      if(obj.drawing) state.drawing = obj.drawing;
+      if(obj.area) state.area = obj.area;
+      if(obj.memo) state.memo = obj.memo;
+      if(obj.date) state.date = obj.date;
+
+      if(Array.isArray(obj.items) && obj.items.length){
+        state.items = state.items.concat(obj.items);
+      }
+
+      if(obj.history){
+        if(Array.isArray(obj.history.drawings)) obj.history.drawings.forEach(v => pushUnique(state.history.drawings, v));
+        if(Array.isArray(obj.history.areas)) obj.history.areas.forEach(v => pushUnique(state.history.areas, v, 150));
+      }
+
+      if(state.items.length === 0) state.items.push(newItem());
+      save();
+      hydrateUI();
+      toast("가져오기를 완료했습니다. (병합됨)");
+    }catch(e){
+      toast("가져오기 실패: 파일 형식을 확인하세요.");
+    }
+  }
+
+  function hydrateUI(){
+    $("#drawing").value = state.drawing || "";
+    $("#date").value = state.date || todayISO();
+    $("#area").value = state.area || "";
+    $("#memo").value = state.memo || "";
+
+    renderLists();
+    renderItems();
+  }
+
+  function bindHeader(){
+    $("#drawing").addEventListener("input", (e) => { state.drawing = e.target.value; save(); });
+    $("#drawing").addEventListener("blur", () => { pushUnique(state.history.drawings, state.drawing); save(); renderLists(); });
+
+    $("#date").addEventListener("change", (e) => { state.date = e.target.value; save(); });
+
+    $("#area").addEventListener("input", (e) => {
+      state.area = e.target.value;
+      pushUnique(state.history.areas, state.area, 150);
+      save();
+      renderLists();
+    });
+
+    $("#memo").addEventListener("input", (e) => { state.memo = e.target.value; save(); });
+  }
+
+  function addItem(){
+    state.items.push(newItem());
+    save();
+    renderItems();
+    toast("한 건을 추가했습니다.");
+  }
+
+  function bindButtons(){
+    $("#btnAddItem").addEventListener("click", addItem);
+    $("#btnAddItem2").addEventListener("click", addItem);
+
+    $("#btnSave").addEventListener("click", () => {
+      pushUnique(state.history.drawings, state.drawing);
+      if(state.area) pushUnique(state.history.areas, state.area, 150);
+      save();
+      renderLists();
+      toast("저장했습니다. (이 기기 저장)");
+    });
+
+    $("#btnGenerate").addEventListener("click", () => {
+      $("#output").value = generateOutput();
+      toast("결과를 생성했습니다.");
+    });
+
+    $("#btnCopy").addEventListener("click", async () => {
+      const text = $("#output").value || generateOutput();
+      $("#output").value = text;
+
+      try{
+        await navigator.clipboard.writeText(text);
+        toast("클립보드에 복사했습니다.");
+      }catch(e){
+        $("#output").focus();
+        $("#output").select();
+        document.execCommand("copy");
+        toast("복사했습니다. (호환 모드)");
+      }
+    });
+
+    $("#btnExport").addEventListener("click", () => {
+      const stamp = (state.date || todayISO()).replaceAll("-","");
+      downloadFile(`worklog_${stamp}.json`, JSON.stringify(state, null, 2));
+      toast("내보내기를 완료했습니다.");
+    });
+
+    $("#btnImport").addEventListener("click", importJSON);
+
+    $("#btnReset").addEventListener("click", () => {
+      const ok = confirm("이 기기에 저장된 내용을 모두 초기화합니다. 진행할까요?");
+      if(!ok) return;
+      localStorage.removeItem(LS_KEY);
+      location.reload();
+    });
+  }
+
+  // Boot
+  load();
+
+  // ✅ 첫 화면 1건 기본 생성
+  if(!state.items.length){
+    state.items = [newItem()];
+  }
+  save();
+
+  bindHeader();
+  bindButtons();
+  bindItemEvents();
+  hydrateUI();
+})();
+</script>
 </body>
 </html>
