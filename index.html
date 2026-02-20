@@ -94,6 +94,7 @@
       gap: 10px;
       flex-wrap: wrap;
       justify-content: flex-end;
+      align-items:center;
     }
 
     /* Card */
@@ -160,6 +161,7 @@
       color: var(--text);
       outline: none;
       transition: border .15s ease, background .15s ease;
+      font-size: 14px;
     }
     input:focus, select:focus, textarea:focus{
       border-color: rgba(96,165,250,.85);
@@ -168,7 +170,7 @@
     input::placeholder{ color: rgba(148,163,184,.62); }
 
     textarea{
-      min-height: 124px;
+      min-height: 132px;
       resize: vertical;
       font-family: var(--mono);
       font-size: 12.5px;
@@ -202,6 +204,7 @@
       gap: 8px;
       white-space: nowrap;
       transition: border .15s ease, background .15s ease, transform .05s ease;
+      touch-action: manipulation;
     }
     .btn:hover{
       border-color: rgba(96,165,250,.55);
@@ -214,22 +217,12 @@
       color: #07101d;
       font-weight: 800;
     }
-    .btn.danger{
-      border-color: rgba(251,113,133,.55);
-    }
+    .btn.danger{ border-color: rgba(251,113,133,.55); }
     .btn.ghost{ background: transparent; }
-    .btn.small{
-      padding: 8px 10px;
-      border-radius: 10px;
-      font-size: 12.5px;
-    }
+    .btn.small{ padding: 8px 10px; border-radius: 10px; font-size: 12.5px; }
 
     /* Items */
-    .items{
-      display:flex;
-      flex-direction: column;
-      gap: 10px;
-    }
+    .items{ display:flex; flex-direction: column; gap: 10px; }
     .item{
       border: 1px solid rgba(51,65,85,.75);
       border-radius: var(--radius2);
@@ -284,9 +277,28 @@
       z-index: 9999;
     }
 
-    @media (max-width: 980px){
+    /* ===== Mobile: 한 파일 안에서 반응형 처리 ===== */
+    @media (max-width: 820px){
+      .wrap{ padding: 0 14px; }
       .topbar{ flex-direction: column; align-items:flex-start; }
-      .actions{ justify-content:flex-start; }
+      .actions{ justify-content:flex-start; width:100%; }
+
+      /* iOS 줌 방지 + 터치 편의 */
+      input, select, textarea{ font-size: 16px; padding: 12px 12px; border-radius: 14px; }
+      .btn{ padding: 12px 13px; font-size: 14px; border-radius: 14px; }
+      .btn.small{ padding: 10px 12px; font-size: 13px; border-radius: 12px; }
+      textarea{ min-height: 180px; }
+
+      /* 기본정보: 12컬럼 → 2컬럼 + 풀폭 */
+      .grid{ grid-template-columns: 1fr 1fr; }
+      .span12,.span6{ grid-column: 1 / -1 !important; }
+      .span3{ grid-column: span 1 !important; }
+
+      /* 아이템: 12컬럼 → 2컬럼 */
+      .itemGrid{ grid-template-columns: 1fr 1fr; }
+      .full{ grid-column: 1 / -1 !important; }
+      .half{ grid-column: span 1 !important; }
+      .btnBar{ grid-column: 1 / -1 !important; justify-content:flex-end; }
     }
   </style>
 </head>
@@ -298,11 +310,13 @@
       <div class="logo"></div>
       <div class="title">
         <h1>오프라인 물량/작업 보고</h1>
-        <div class="sub">서버 없이 사용 · 자동 표준화(한/영/오타) · 카톡용 결과 자동 생성 · 기기(LocalStorage) 저장</div>
+        <div class="sub">서버 없이 사용 · 자동 표준화(한/영/오타) · 카톡용 결과 생성/복사/공유 · 기기(LocalStorage) 저장</div>
       </div>
     </div>
 
+    <!-- 버튼은 필요하면 숨기면 됨. (JSON은 제거했고, 초기화만 남김) -->
     <div class="actions">
+      <button class="btn danger" id="btnReset">초기화</button>
     </div>
   </div>
 
@@ -316,24 +330,24 @@
     </div>
 
     <div class="grid">
-      <div class="field" style="grid-column: span 6;">
+      <div class="field span6" style="grid-column: span 6;">
         <label>도면 Num. (텍스트 입력 + 자동완성)</label>
         <input id="drawing" placeholder="예: 2153-EL-CTL-0001 Rev.1" list="drawingList" />
         <datalist id="drawingList"></datalist>
       </div>
 
-      <div class="field" style="grid-column: span 3;">
+      <div class="field span3" style="grid-column: span 3;">
         <label>날짜</label>
         <input id="date" type="date" />
       </div>
 
-      <div class="field" style="grid-column: span 3;">
+      <div class="field span3" style="grid-column: span 3;">
         <label>공정지역(Area)</label>
         <input id="area" placeholder="예: PIPE RACK / SUBSTATION / 전기실 1층" list="areaList" />
         <datalist id="areaList"></datalist>
       </div>
 
-      <div class="field" style="grid-column: span 12;">
+      <div class="field span12" style="grid-column: span 12;">
         <label>메모(선택)</label>
         <input id="memo" placeholder="예: 우천 / 야간 / 특이사항" />
       </div>
@@ -342,7 +356,7 @@
     <div class="hr"></div>
 
     <div class="bar">
-      <div class="hint">저장/자동완성은 이 기기(LocalStorage)에만 남습니다. 공유가 필요하면 JSON 내보내기/가져오기(병합)를 사용하세요.</div>
+      <div class="hint">저장은 이 기기(LocalStorage)에만 남습니다. (서버 없음)</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn" id="btnAddItem">+ 자재/작업 추가</button>
         <button class="btn" id="btnSave">저장</button>
@@ -362,7 +376,7 @@
       </div>
     </div>
     <div class="hint" style="margin-bottom:10px;">
-      자재명은 한글/영어/오타 입력 가능 → 표준 영문명/카테고리 자동 지정. (기본 자재명 자동완성: 통합문서1 기반)
+      자재명은 한글/영어/오타 입력 가능 → 표준 영문명/카테고리 자동 지정.
     </div>
     <div class="items" id="items"></div>
   </section>
@@ -371,11 +385,12 @@
   <section class="card">
     <div class="cardHead">
       <div class="left">
-        <h2>금일 작업 결과(카톡 복사용)</h2>
+        <h2>금일 작업 결과(카톡용)</h2>
         <span class="pill">자동 포맷</span>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn" id="btnCopy">내용 복사</button>
+        <button class="btn" id="btnShare">공유</button>
       </div>
     </div>
 
@@ -384,7 +399,7 @@
     <div class="hr"></div>
 
     <div class="bar">
-      <div class="hint">생성된 텍스트를 그대로 복사해서 단톡방에 붙여넣으면 됩니다.</div>
+      <div class="hint">공유: 가능한 기기(모바일)는 공유 시트를 열고, 불가하면 복사/다운로드로 대체합니다.</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn primary" id="btnGenerate">카톡용 결과 생성</button>
       </div>
@@ -393,8 +408,6 @@
 </div>
 
 <div class="toast" id="toast"></div>
-
-<!-- 통합문서1 기반 자재명 자동완성(option 삽입해서 배포 권장) -->
 <datalist id="materialBaseList"></datalist>
 
 <script>
@@ -455,7 +468,7 @@
     const raw = (input||"").trim();
     if(!raw) return { canonical:"", category:"", confidence:"" };
 
-    // 휴리스틱: "28C" 같은 표기 → CD CONDUIT
+    // "28C" → CD CONDUIT
     if(/^\d+(?:\.\d+)?\s*C$/i.test(raw)){
       return { canonical:"CD CONDUIT", category:"CONDUIT", confidence:"자동분류" };
     }
@@ -487,19 +500,17 @@
 
   function parseSpec(spec){
     const s = (spec||"").trim();
-    if(!s) return { parts:[], pretty:"" };
-
-    // 300*150*3000 / 300×150×3000 / 300x150x3000
+    if(!s) return { pretty:"" };
     const m = s.replace(/,/g,"").match(/^(\d+(?:\.\d+)?)\s*[xX×\*]\s*(\d+(?:\.\d+)?)\s*(?:[xX×\*]\s*(\d+(?:\.\d+)?))?\s*$/);
     if(m){
       const parts = [m[1], m[2]].concat(m[3] ? [m[3]] : []);
-      return { parts, pretty: parts.join("×") };
+      return { pretty: parts.join("×") };
     }
-    return { parts:[], pretty: s };
+    return { pretty: s };
   }
 
   // Storage
-  const LS_KEY = "worklog_offline_pretty_theme_v1";
+  const LS_KEY = "worklog_offline_mobile_share_v1";
   const state = {
     drawing: "",
     date: todayISO(),
@@ -520,7 +531,7 @@
     if(!Array.isArray(state.history.areas) || state.history.areas.length===0) state.history.areas = DEFAULT_AREAS.slice();
   }
 
-  function save(){
+  function saveLS(){
     localStorage.setItem(LS_KEY, JSON.stringify(state));
   }
 
@@ -561,51 +572,51 @@
 
       el.innerHTML = `
         <div class="itemGrid">
-          <div class="field" style="grid-column: span 2;">
+          <div class="field full" style="grid-column: span 2;">
             <label>작업구역(선택)</label>
             <input class="js-area" placeholder="(상단 공정지역 사용)" list="areaList" value="${escapeHtml(it.area||"")}" />
           </div>
 
-          <div class="field" style="grid-column: span 3;">
+          <div class="field full" style="grid-column: span 3;">
             <label>자재명(자유 입력)</label>
             <input class="js-mat" placeholder="예: 전선관 / CABLE TRAY / U CHANNEL" list="materialBaseList" value="${escapeHtml(it.materialInput||"")}" />
           </div>
 
-          <div class="field" style="grid-column: span 2;">
+          <div class="field full" style="grid-column: span 2;">
             <label>표준 자재명(자동)</label>
             <input class="js-canon" value="${escapeHtml(it.canonical||"")}" readonly />
           </div>
 
-          <div class="field" style="grid-column: span 1;">
+          <div class="field half" style="grid-column: span 1;">
             <label>카테고리</label>
             <select class="js-cat">
               ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${c===it.category ? "selected":""}>${c}</option>`).join("")}
             </select>
           </div>
 
-          <div class="field" style="grid-column: span 2;">
+          <div class="field half" style="grid-column: span 2;">
             <label>규격(Spec)</label>
             <input class="js-spec" placeholder="예: 600*150*3000 / 28MM / 28C" value="${escapeHtml(it.spec||"")}" />
           </div>
 
-          <div class="field" style="grid-column: span 1;">
+          <div class="field half" style="grid-column: span 1;">
             <label>수량</label>
             <input class="js-qty" inputmode="decimal" placeholder="예: 12" value="${escapeHtml(it.qty||"")}" />
           </div>
 
-          <div class="field" style="grid-column: span 1;">
+          <div class="field half" style="grid-column: span 1;">
             <label>단위</label>
             <select class="js-unit">
               ${UNIT_OPTIONS.map(u => `<option value="${u}" ${u===it.unit ? "selected":""}>${u}</option>`).join("")}
             </select>
           </div>
 
-          <div class="field" style="grid-column: span 11;">
+          <div class="field full" style="grid-column: span 11;">
             <label>구간/비고(선택)</label>
             <input class="js-note" placeholder="예: 구간 30~32 / Column 8~25 / welding" value="${escapeHtml(it.note||"")}" />
           </div>
 
-          <div style="grid-column: span 1; display:flex; gap:8px; justify-content:flex-end;">
+          <div class="btnBar" style="grid-column: span 1; display:flex; gap:8px;">
             <button class="btn small js-dup" type="button">복제</button>
             <button class="btn small danger js-del" type="button">삭제</button>
           </div>
@@ -624,7 +635,6 @@
     $("#countItems").textContent = String(state.items.length);
   }
 
-  // 입력 중 리렌더링 최소화(입력 끊김 방지)
   function bindItemEvents(){
     const host = $("#items");
 
@@ -656,7 +666,7 @@
       if(e.target.classList.contains("js-qty")) it.qty = e.target.value;
       if(e.target.classList.contains("js-note")) it.note = e.target.value;
 
-      save();
+      saveLS();
     });
 
     host.addEventListener("change", (e) => {
@@ -669,7 +679,7 @@
       if(e.target.classList.contains("js-cat")) it.category = e.target.value;
       if(e.target.classList.contains("js-unit")) it.unit = e.target.value;
 
-      save();
+      saveLS();
     });
 
     host.addEventListener("click", (e) => {
@@ -679,8 +689,8 @@
 
       if(e.target.closest(".js-del")){
         state.items.splice(i,1);
-        if(state.items.length === 0) state.items.push(newItem()); // 최소 1건 유지
-        save();
+        if(state.items.length === 0) state.items.push(newItem());
+        saveLS();
         renderItems();
         toast("삭제했습니다.");
       }
@@ -688,7 +698,7 @@
       if(e.target.closest(".js-dup")){
         const copy = JSON.parse(JSON.stringify(state.items[i]));
         state.items.splice(i+1, 0, copy);
-        save();
+        saveLS();
         renderItems();
         toast("복제했습니다.");
       }
@@ -737,8 +747,27 @@
     return header + body;
   }
 
-  function downloadFile(filename, text){
-    const blob = new Blob([text], {type:"application/json"});
+  async function copyToClipboard(text){
+    try{
+      await navigator.clipboard.writeText(text);
+      toast("클립보드에 복사했습니다.");
+      return true;
+    }catch(e){
+      const out = $("#output");
+      out.focus(); out.select();
+      try{
+        document.execCommand("copy");
+        toast("복사했습니다. (호환 모드)");
+        return true;
+      }catch(_){
+        toast("복사 실패: 직접 선택 후 복사하세요.");
+        return false;
+      }
+    }
+  }
+
+  function downloadTextFile(filename, text){
+    const blob = new Blob([text], {type:"text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -749,77 +778,47 @@
     URL.revokeObjectURL(url);
   }
 
-  function pickFile(){
-    return new Promise((resolve) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".json,application/json";
-      input.onchange = () => resolve(input.files?.[0] || null);
-      input.click();
-    });
-  }
-
-  async function importJSON(){
-    const f = await pickFile();
-    if(!f) return;
-
-    const text = await f.text();
-    try{
-      const obj = JSON.parse(text);
-
-      // 병합 정책: header는 덮어쓰기, items는 append
-      if(obj.drawing) state.drawing = obj.drawing;
-      if(obj.area) state.area = obj.area;
-      if(obj.memo) state.memo = obj.memo;
-      if(obj.date) state.date = obj.date;
-
-      if(Array.isArray(obj.items) && obj.items.length){
-        state.items = state.items.concat(obj.items);
+  async function shareText(text){
+    // 가능한 모바일: 시스템 공유창
+    if(navigator.share){
+      try{
+        await navigator.share({
+          title: "금일 작업내용",
+          text
+        });
+        toast("공유를 완료했습니다.");
+        return;
+      }catch(e){
+        // 사용자가 취소한 경우도 여기로 올 수 있음
       }
-
-      if(obj.history){
-        if(Array.isArray(obj.history.drawings)) obj.history.drawings.forEach(v => pushUnique(state.history.drawings, v));
-        if(Array.isArray(obj.history.areas)) obj.history.areas.forEach(v => pushUnique(state.history.areas, v, 150));
-      }
-
-      if(state.items.length === 0) state.items.push(newItem());
-      save();
-      hydrateUI();
-      toast("가져오기를 완료했습니다. (병합됨)");
-    }catch(e){
-      toast("가져오기 실패: 파일 형식을 확인하세요.");
     }
-  }
 
-  function hydrateUI(){
-    $("#drawing").value = state.drawing || "";
-    $("#date").value = state.date || todayISO();
-    $("#area").value = state.area || "";
-    $("#memo").value = state.memo || "";
-
-    renderLists();
-    renderItems();
+    // fallback: 복사 + txt 다운로드
+    await copyToClipboard(text);
+    const stamp = (state.date || todayISO()).replaceAll("-","");
+    downloadTextFile(`worklog_${stamp}.txt`, text);
+    toast("공유 미지원: 복사 + txt 다운로드로 대체했습니다.");
   }
 
   function bindHeader(){
-    $("#drawing").addEventListener("input", (e) => { state.drawing = e.target.value; save(); });
-    $("#drawing").addEventListener("blur", () => { pushUnique(state.history.drawings, state.drawing); save(); renderLists(); });
+    $("#drawing").addEventListener("input", (e) => { state.drawing = e.target.value; saveLS(); });
+    $("#drawing").addEventListener("blur", () => { pushUnique(state.history.drawings, state.drawing); saveLS(); renderLists(); });
 
-    $("#date").addEventListener("change", (e) => { state.date = e.target.value; save(); });
+    $("#date").addEventListener("change", (e) => { state.date = e.target.value; saveLS(); });
 
     $("#area").addEventListener("input", (e) => {
       state.area = e.target.value;
       pushUnique(state.history.areas, state.area, 150);
-      save();
+      saveLS();
       renderLists();
     });
 
-    $("#memo").addEventListener("input", (e) => { state.memo = e.target.value; save(); });
+    $("#memo").addEventListener("input", (e) => { state.memo = e.target.value; saveLS(); });
   }
 
   function addItem(){
     state.items.push(newItem());
-    save();
+    saveLS();
     renderItems();
     toast("한 건을 추가했습니다.");
   }
@@ -831,7 +830,7 @@
     $("#btnSave").addEventListener("click", () => {
       pushUnique(state.history.drawings, state.drawing);
       if(state.area) pushUnique(state.history.areas, state.area, 150);
-      save();
+      saveLS();
       renderLists();
       toast("저장했습니다. (이 기기 저장)");
     });
@@ -844,28 +843,17 @@
     $("#btnCopy").addEventListener("click", async () => {
       const text = $("#output").value || generateOutput();
       $("#output").value = text;
-
-      try{
-        await navigator.clipboard.writeText(text);
-        toast("클립보드에 복사했습니다.");
-      }catch(e){
-        $("#output").focus();
-        $("#output").select();
-        document.execCommand("copy");
-        toast("복사했습니다. (호환 모드)");
-      }
+      await copyToClipboard(text);
     });
 
-    $("#btnExport").addEventListener("click", () => {
-      const stamp = (state.date || todayISO()).replaceAll("-","");
-      downloadFile(`worklog_${stamp}.json`, JSON.stringify(state, null, 2));
-      toast("내보내기를 완료했습니다.");
+    $("#btnShare").addEventListener("click", async () => {
+      const text = $("#output").value || generateOutput();
+      $("#output").value = text;
+      await shareText(text);
     });
-
-    $("#btnImport").addEventListener("click", importJSON);
 
     $("#btnReset").addEventListener("click", () => {
-      const ok = confirm("이 기기에 저장된 내용을 모두 초기화합니다. 진행할까요?");
+      const ok = confirm("이 기기에 저장된 모든 데이터가 삭제됩니다. 계속할까요?");
       if(!ok) return;
       localStorage.removeItem(LS_KEY);
       location.reload();
@@ -875,16 +863,24 @@
   // Boot
   load();
 
-  // ✅ 첫 화면 1건 기본 생성
+  // 첫 화면 1건 기본 생성
   if(!state.items.length){
     state.items = [newItem()];
   }
-  save();
+  saveLS();
+
+  // hydrate
+  $("#drawing").value = state.drawing || "";
+  $("#date").value = state.date || todayISO();
+  $("#area").value = state.area || "";
+  $("#memo").value = state.memo || "";
+
+  renderLists();
+  renderItems();
 
   bindHeader();
   bindButtons();
   bindItemEvents();
-  hydrateUI();
 })();
 </script>
 </body>
