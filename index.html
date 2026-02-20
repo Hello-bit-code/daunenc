@@ -49,7 +49,6 @@
       padding: 0 18px;
     }
 
-    /* Header */
     .topbar{
       display:flex;
       gap: 14px;
@@ -97,7 +96,6 @@
       align-items:center;
     }
 
-    /* Card */
     .card{
       background: linear-gradient(180deg, var(--surface), var(--surface2));
       border: 1px solid var(--line);
@@ -140,7 +138,6 @@
     }
     .pill strong{ color: var(--text); font-weight: 700; }
 
-    /* Form */
     .grid{
       display:grid;
       grid-template-columns: repeat(12, 1fr);
@@ -190,7 +187,6 @@
       margin: 14px 0;
     }
 
-    /* Buttons */
     .btn{
       border: 1px solid rgba(51,65,85,.85);
       background: rgba(11,15,26,.50);
@@ -221,7 +217,6 @@
     .btn.ghost{ background: transparent; }
     .btn.small{ padding: 8px 10px; border-radius: 10px; font-size: 12.5px; }
 
-    /* Items */
     .items{ display:flex; flex-direction: column; gap: 10px; }
     .item{
       border: 1px solid rgba(51,65,85,.75);
@@ -259,7 +254,34 @@
       align-items: center;
     }
 
-    /* Toast */
+    .sharePanel{
+      margin-top: 12px;
+      border: 1px dashed rgba(51,65,85,.75);
+      border-radius: 14px;
+      background: rgba(11,15,26,.32);
+      padding: 12px;
+      display:none;
+    }
+    .sharePanel .row{
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items:center;
+      justify-content: space-between;
+    }
+    .sharePanel .row .left{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      max-width: 680px;
+    }
+    .sharePanel .row .right{
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content:flex-end;
+    }
+
     .toast{
       position: fixed;
       left: 50%;
@@ -277,28 +299,33 @@
       z-index: 9999;
     }
 
-    /* ===== Mobile: 한 파일 안에서 반응형 처리 ===== */
     @media (max-width: 820px){
       .wrap{ padding: 0 14px; }
       .topbar{ flex-direction: column; align-items:flex-start; }
       .actions{ justify-content:flex-start; width:100%; }
 
-      /* iOS 줌 방지 + 터치 편의 */
-      input, select, textarea{ font-size: 16px; padding: 12px 12px; border-radius: 14px; }
+      input, select, textarea{
+        font-size: 16px;
+        padding: 12px 12px;
+        border-radius: 14px;
+      }
       .btn{ padding: 12px 13px; font-size: 14px; border-radius: 14px; }
       .btn.small{ padding: 10px 12px; font-size: 13px; border-radius: 12px; }
       textarea{ min-height: 180px; }
 
-      /* 기본정보: 12컬럼 → 2컬럼 + 풀폭 */
       .grid{ grid-template-columns: 1fr 1fr; }
       .span12,.span6{ grid-column: 1 / -1 !important; }
       .span3{ grid-column: span 1 !important; }
 
-      /* 아이템: 12컬럼 → 2컬럼 */
       .itemGrid{ grid-template-columns: 1fr 1fr; }
       .full{ grid-column: 1 / -1 !important; }
       .half{ grid-column: span 1 !important; }
       .btnBar{ grid-column: 1 / -1 !important; justify-content:flex-end; }
+
+      .sharePanel .row{ gap: 12px; }
+      .sharePanel .row .left{ max-width: none; }
+      .sharePanel .row .right{ width:100%; justify-content:stretch; }
+      .sharePanel .row .right .btn{ flex: 1 1 auto; justify-content:center; }
     }
   </style>
 </head>
@@ -313,14 +340,11 @@
         <div class="sub">서버 없이 사용 · 자동 표준화(한/영/오타) · 카톡용 결과 생성/복사/공유 · 기기(LocalStorage) 저장</div>
       </div>
     </div>
-
-    <!-- 버튼은 필요하면 숨기면 됨. (JSON은 제거했고, 초기화만 남김) -->
     <div class="actions">
       <button class="btn danger" id="btnReset">초기화</button>
     </div>
   </div>
 
-  <!-- 1) Header -->
   <section class="card">
     <div class="cardHead">
       <div class="left">
@@ -364,7 +388,6 @@
     </div>
   </section>
 
-  <!-- 2) Items -->
   <section class="card">
     <div class="cardHead">
       <div class="left">
@@ -376,12 +399,11 @@
       </div>
     </div>
     <div class="hint" style="margin-bottom:10px;">
-      자재명은 한글/영어/오타 입력 가능 → 표준 영문명/카테고리 자동 지정.
+      자재명 입력 → 표준 자재명/카테고리 자동 제안. 필요하면 사용자가 직접 수정하세요.
     </div>
     <div class="items" id="items"></div>
   </section>
 
-  <!-- 3) Output -->
   <section class="card">
     <div class="cardHead">
       <div class="left">
@@ -396,10 +418,28 @@
 
     <textarea id="output" readonly placeholder="아래 ‘카톡용 결과 생성’ 버튼을 누르면 자동으로 작성됩니다."></textarea>
 
+    <div class="sharePanel" id="sharePanel">
+      <div class="row">
+        <div class="left">
+          이 환경에서는 시스템 공유창이 제한될 수 있습니다. 아래 빠른 작업으로 공유하세요.
+          <br/>• <b>복사</b>: 카카오톡/메일에 붙여넣기
+          <br/>• <b>TXT 저장</b>: 파일로 공유
+          <br/>• <b>카카오톡 웹</b>: PC에서 카톡 열기
+          <br/>• <b>메일</b>: 기본 메일 앱 열기
+        </div>
+        <div class="right">
+          <button class="btn" id="btnQuickCopy">복사</button>
+          <button class="btn" id="btnQuickTxt">TXT 저장</button>
+          <button class="btn" id="btnQuickKakao">카카오톡 웹</button>
+          <button class="btn" id="btnQuickMail">메일</button>
+        </div>
+      </div>
+    </div>
+
     <div class="hr"></div>
 
     <div class="bar">
-      <div class="hint">공유: 가능한 기기(모바일)는 공유 시트를 열고, 불가하면 복사/다운로드로 대체합니다.</div>
+      <div class="hint">모바일(지원 브라우저)은 공유 시트를 우선 사용합니다. 실패/PC는 빠른 공유 패널이 열립니다.</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn primary" id="btnGenerate">카톡용 결과 생성</button>
       </div>
@@ -413,29 +453,34 @@
 <script>
 (() => {
   const UNIT_OPTIONS = ["EA","M","SET","POINT","ROLL","PCS","본"];
-  const CATEGORY_OPTIONS = ["TRAY","CONDUIT","ELP","SUPPORT","CHANNEL","ANGLE","FITTING","BOX","FASTENER","PAINT","OTHER"];
+
+  // ✅ C-SECTION 삭제, U/C만 유지
+  const CATEGORY_OPTIONS = ["TRAY","CONDUIT","ELP","SUPPORT","U-CHANNEL","C-CHANNEL","ANGLE","FITTING","BOX","FASTENER","PAINT","OTHER"];
+
   const DEFAULT_AREAS = ["PIPE RACK","전기실 1층","전기실 2층","SUBSTATION","UG","TK AREA","에틸렌 B구역"];
 
+  // ✅ 찬넬 분리: U찬넬 / C찬넬 (C형강은 옵션에서 제거했으니 여기서도 제외)
   const MATERIAL_DICT = [
-    { aliases:["전선관","스틸 전선관","STEEL CONDUIT","STEEL CONDUIT PIPE","CONDUIT","CONDUIT PIPE","STEEL PIPE","PIPE"], canonical:"STEEL CONDUIT", category:"CONDUIT"},
+    { aliases:["전선관","스틸 전선관","STEEL CONDUIT","STEEL CONDUIT PIPE","CONDUIT","CONDUIT PIPE"], canonical:"STEEL CONDUIT", category:"CONDUIT"},
     { aliases:["CD","CD관","CD PIPE","CD CONDUIT","22C","28C","36C","54C"], canonical:"CD CONDUIT", category:"CONDUIT"},
     { aliases:["후렉시블","후렉쉬블","FLEX","FLEXIBLE","FLEXIBLE CONDUIT"], canonical:"FLEXIBLE CONDUIT", category:"CONDUIT"},
     { aliases:["ELP","ELP 배관","ELP PIPE"], canonical:"ELP", category:"ELP"},
+
+    { aliases:["트레이","케이블트레이","CABLE TRAY","TRAY","CABLETRAY"], canonical:"CABLE TRAY", category:"TRAY"},
+
+    { aliases:["서포트","SUPPORT","LIGHTING SUPPORT","TRAY SUPPORT"], canonical:"SUPPORT", category:"SUPPORT"},
+    { aliases:["앵글","ANGLE"], canonical:"ANGLE", category:"ANGLE"},
     { aliases:["유니온","UNION"], canonical:"UNION", category:"FITTING"},
     { aliases:["레듀샤","REDUCER","REDUCER LEFT","REDUCER RIGHT"], canonical:"REDUCER", category:"FITTING"},
     { aliases:["클램프","CLAMP"], canonical:"CLAMP", category:"FASTENER"},
-    { aliases:["접지","GROUND","GV","GROUNDING"], canonical:"GROUNDING", category:"OTHER"},
-    { aliases:["트레이","케이블트레이","CABLE TRAY","TRAY","CABLETRAY"], canonical:"CABLE TRAY", category:"TRAY"},
-    { aliases:["엔드캡","END CAP","ENDCAP"], canonical:"END CAP", category:"TRAY"},
-    { aliases:["조인트","JOINT"], canonical:"JOINT", category:"TRAY"},
-    { aliases:["러그","LUG","EARTH LUG","GROUND LUG"], canonical:"GROUND LUG", category:"TRAY"},
-    { aliases:["서포트","SUPPORT","LIGHTING SUPPORT","TRAY SUPPORT"], canonical:"SUPPORT", category:"SUPPORT"},
-    { aliases:["찬넬","채널","CHANNEL","U CHANNEL","U-CHANNEL","DOUBLE CHANNEL","C CHANNEL","C-CHANNEL"], canonical:"CHANNEL", category:"CHANNEL"},
-    { aliases:["앵글","ANGLE"], canonical:"ANGLE", category:"ANGLE"},
-    { aliases:["포스트베이스","POST BASE","BASE","POSTBASE"], canonical:"POST BASE", category:"SUPPORT"},
     { aliases:["라운드박스","ROUND BOX"], canonical:"ROUND BOX", category:"BOX"},
     { aliases:["풀박스","PULL BOX","FULL BOX"], canonical:"PULL BOX", category:"BOX"},
     { aliases:["도장","페인트","PAINT","COATING"], canonical:"PAINT", category:"PAINT"},
+
+    // ✅ U-CHANNEL
+    { aliases:["U찬넬","U 찬넬","U-CHANNEL","U CHANNEL","UNISTRUT","유니스트럿","STRUT CHANNEL"], canonical:"U-CHANNEL", category:"U-CHANNEL"},
+    // ✅ C-CHANNEL (일반 찬넬/채널/CHANNEL은 기본적으로 C로)
+    { aliases:["C찬넬","C 찬넬","C-CHANNEL","C CHANNEL","찬넬","채널","CHANNEL"], canonical:"C-CHANNEL", category:"C-CHANNEL"},
   ];
 
   const $ = (sel) => document.querySelector(sel);
@@ -476,18 +521,21 @@
     const up = normalizeText(raw);
     const compact = up.replace(/[\s\-_/]/g, "");
 
+    // 정확
     for(const entry of MATERIAL_DICT){
       for(const a of entry.aliases){
         const au = normalizeText(a);
         if(up === au) return { canonical: entry.canonical, category: entry.category, confidence:"정확" };
       }
     }
+    // 포함
     for(const entry of MATERIAL_DICT){
       for(const a of entry.aliases){
         const au = normalizeText(a);
         if(au && up.includes(au)) return { canonical: entry.canonical, category: entry.category, confidence:"포함" };
       }
     }
+    // 유사
     for(const entry of MATERIAL_DICT){
       for(const a of entry.aliases){
         const au = normalizeText(a).replace(/[\s\-_/]/g, "");
@@ -509,8 +557,7 @@
     return { pretty: s };
   }
 
-  // Storage
-  const LS_KEY = "worklog_offline_mobile_share_v1";
+  const LS_KEY = "worklog_offline_sharepanel_v2_uc_only";
   const state = {
     drawing: "",
     date: todayISO(),
@@ -550,7 +597,17 @@
   }
 
   function newItem(){
-    return { area:"", materialInput:"", canonical:"", category:"OTHER", spec:"", qty:"", unit:"EA", note:"" };
+    return {
+      area:"",
+      materialInput:"",
+      canonical:"",      // ✅ 자동 제안되지만 수정 가능
+      category:"OTHER",  // ✅ 자동 제안되지만 수정 가능
+      spec:"",
+      qty:"",
+      unit:"EA",
+      note:"",
+      lockAuto:false     // ✅ 사용자가 수정하면 자동 덮어쓰기 방지
+    };
   }
 
   function renderItems(){
@@ -559,9 +616,11 @@
 
     state.items.forEach((it, idx) => {
       const mapped = mapMaterial(it.materialInput);
-      if(it.materialInput){
+
+      // ✅ 자동 제안: lockAuto가 false일 때만 canonical/category 자동 갱신
+      if(it.materialInput && !it.lockAuto){
         it.canonical = mapped.canonical;
-        it.category = (it.category && it.category !== "OTHER") ? it.category : mapped.category;
+        it.category = mapped.category || "OTHER";
       }
 
       const specPretty = parseSpec(it.spec).pretty;
@@ -579,16 +638,16 @@
 
           <div class="field full" style="grid-column: span 3;">
             <label>자재명(자유 입력)</label>
-            <input class="js-mat" placeholder="예: 전선관 / CABLE TRAY / U CHANNEL" list="materialBaseList" value="${escapeHtml(it.materialInput||"")}" />
+            <input class="js-mat" placeholder="예: U찬넬 / C찬넬 / 전선관" list="materialBaseList" value="${escapeHtml(it.materialInput||"")}" />
           </div>
 
           <div class="field full" style="grid-column: span 2;">
-            <label>표준 자재명(자동)</label>
-            <input class="js-canon" value="${escapeHtml(it.canonical||"")}" readonly />
+            <label>표준 자재명(수정 가능)</label>
+            <input class="js-canon" placeholder="예: U-CHANNEL / C-CHANNEL" value="${escapeHtml(it.canonical||"")}" />
           </div>
 
           <div class="field half" style="grid-column: span 1;">
-            <label>카테고리</label>
+            <label>카테고리(수정 가능)</label>
             <select class="js-cat">
               ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${c===it.category ? "selected":""}>${c}</option>`).join("")}
             </select>
@@ -617,6 +676,7 @@
           </div>
 
           <div class="btnBar" style="grid-column: span 1; display:flex; gap:8px;">
+            <button class="btn small js-unlock" type="button" title="자동 제안 다시 적용">자동</button>
             <button class="btn small js-dup" type="button">복제</button>
             <button class="btn small danger js-del" type="button">삭제</button>
           </div>
@@ -626,6 +686,7 @@
           <span class="chip"><b>#</b> ${idx+1}</span>
           <span class="chip"><b>매핑</b> <span class="js-map">${escapeHtml(mapped.confidence || "-")}</span></span>
           <span class="chip"><b>규격</b> <span class="js-specpretty">${escapeHtml(specPretty || "-")}</span></span>
+          <span class="chip"><b>자동잠금</b> <span class="js-lock">${it.lockAuto ? "ON" : "OFF"}</span></span>
         </div>
       `;
 
@@ -633,6 +694,7 @@
     });
 
     $("#countItems").textContent = String(state.items.length);
+    saveLS();
   }
 
   function bindItemEvents(){
@@ -649,13 +711,27 @@
 
       if(e.target.classList.contains("js-mat")){
         it.materialInput = e.target.value;
-        const mapped = mapMaterial(it.materialInput);
-        it.canonical = mapped.canonical;
-        it.category = mapped.category;
 
-        itemEl.querySelector(".js-canon").value = it.canonical;
-        itemEl.querySelector(".js-map").textContent = mapped.confidence || "-";
-        itemEl.querySelector(".js-cat").value = it.category || "OTHER";
+        // materialInput 바뀌면 자동제안 적용(단, lockAuto=true면 유지)
+        if(!it.lockAuto){
+          const mapped = mapMaterial(it.materialInput);
+          it.canonical = mapped.canonical;
+          it.category = mapped.category || "OTHER";
+
+          itemEl.querySelector(".js-canon").value = it.canonical;
+          itemEl.querySelector(".js-cat").value = it.category;
+          itemEl.querySelector(".js-map").textContent = mapped.confidence || "-";
+        }else{
+          const mapped = mapMaterial(it.materialInput);
+          itemEl.querySelector(".js-map").textContent = mapped.confidence || "-";
+        }
+      }
+
+      // ✅ 사용자가 표준 자재명/카테고리를 손대면 자동 덮어쓰기 방지(LOCK ON)
+      if(e.target.classList.contains("js-canon")){
+        it.canonical = e.target.value;
+        it.lockAuto = true;
+        itemEl.querySelector(".js-lock").textContent = "ON";
       }
 
       if(e.target.classList.contains("js-spec")){
@@ -676,7 +752,11 @@
       const it = state.items[i];
       if(!it) return;
 
-      if(e.target.classList.contains("js-cat")) it.category = e.target.value;
+      if(e.target.classList.contains("js-cat")){
+        it.category = e.target.value;
+        it.lockAuto = true;
+        itemEl.querySelector(".js-lock").textContent = "ON";
+      }
       if(e.target.classList.contains("js-unit")) it.unit = e.target.value;
 
       saveLS();
@@ -690,7 +770,6 @@
       if(e.target.closest(".js-del")){
         state.items.splice(i,1);
         if(state.items.length === 0) state.items.push(newItem());
-        saveLS();
         renderItems();
         toast("삭제했습니다.");
       }
@@ -698,9 +777,19 @@
       if(e.target.closest(".js-dup")){
         const copy = JSON.parse(JSON.stringify(state.items[i]));
         state.items.splice(i+1, 0, copy);
-        saveLS();
         renderItems();
         toast("복제했습니다.");
+      }
+
+      // ✅ 자동 버튼: lockAuto 해제 후 현재 자재명으로 다시 자동 제안
+      if(e.target.closest(".js-unlock")){
+        const it = state.items[i];
+        it.lockAuto = false;
+        const mapped = mapMaterial(it.materialInput);
+        it.canonical = mapped.canonical;
+        it.category = mapped.category || "OTHER";
+        renderItems();
+        toast("자동 제안을 다시 적용했습니다.");
       }
     });
   }
@@ -719,25 +808,23 @@
     ].filter(Boolean).join("\n");
 
     const lines = state.items.map((it) => {
-      const mat = (it.materialInput||"").trim();
-      const mapped = mapMaterial(mat);
-      const canonical = (it.canonical||mapped.canonical||"").trim();
-
+      const canonical = (it.canonical||"").trim();
       const specPretty = parseSpec(it.spec).pretty;
       const qty = (it.qty||"").toString().trim();
       const unit = (it.unit||"").trim();
       const note = (it.note||"").trim();
       const area = (it.area||"").trim();
 
-      const isEmpty = !mat && !canonical && !specPretty && !qty && !note;
+      const isEmpty = !canonical && !specPretty && !qty && !note && !(it.materialInput||"").trim();
       if(isEmpty) return null;
 
       const areaPart = area ? ` [${area}]` : "";
+      const matPart  = canonical || (it.materialInput||"").trim().toUpperCase();
       const specPart = specPretty ? ` ${specPretty}` : "";
-      const qtyPart = (qty && unit) ? `  ${qty}${unit}` : (qty ? `  ${qty}` : "");
+      const qtyPart  = (qty && unit) ? `  ${qty}${unit}` : (qty ? `  ${qty}` : "");
       const notePart = note ? `  (${note})` : "";
 
-      return `${areaPart} ${canonical}${specPart}${qtyPart}${notePart}`.replace(/\s+/g, " ").trim();
+      return `${areaPart} ${matPart}${specPart}${qtyPart}${notePart}`.replace(/\s+/g, " ").trim();
     }).filter(Boolean);
 
     const body = lines.length
@@ -778,26 +865,35 @@
     URL.revokeObjectURL(url);
   }
 
-  async function shareText(text){
-    // 가능한 모바일: 시스템 공유창
-    if(navigator.share){
-      try{
-        await navigator.share({
-          title: "금일 작업내용",
-          text
-        });
-        toast("공유를 완료했습니다.");
-        return;
-      }catch(e){
-        // 사용자가 취소한 경우도 여기로 올 수 있음
-      }
-    }
+  function showSharePanel(show){
+    $("#sharePanel").style.display = show ? "block" : "none";
+  }
 
-    // fallback: 복사 + txt 다운로드
+  // ✅ 모바일 공유시트 우선
+  async function shareSystem(text){
+    if(!navigator.share) return false;
+    try{
+      await navigator.share({ title: "금일 작업내용", text });
+      toast("공유를 완료했습니다.");
+      return true;
+    }catch(e){
+      return false; // 취소/실패
+    }
+  }
+
+  async function shareFallback(text){
+    showSharePanel(true);
     await copyToClipboard(text);
-    const stamp = (state.date || todayISO()).replaceAll("-","");
-    downloadTextFile(`worklog_${stamp}.txt`, text);
-    toast("공유 미지원: 복사 + txt 다운로드로 대체했습니다.");
+    toast("공유 미지원: 아래 빠른 공유를 사용하세요.");
+  }
+
+  async function shareTextSmart(text){
+    const ok = await shareSystem(text);
+    if(ok){
+      showSharePanel(false);
+      return;
+    }
+    await shareFallback(text);
   }
 
   function bindHeader(){
@@ -818,7 +914,6 @@
 
   function addItem(){
     state.items.push(newItem());
-    saveLS();
     renderItems();
     toast("한 건을 추가했습니다.");
   }
@@ -836,7 +931,8 @@
     });
 
     $("#btnGenerate").addEventListener("click", () => {
-      $("#output").value = generateOutput();
+      const txt = generateOutput();
+      $("#output").value = txt;
       toast("결과를 생성했습니다.");
     });
 
@@ -849,7 +945,37 @@
     $("#btnShare").addEventListener("click", async () => {
       const text = $("#output").value || generateOutput();
       $("#output").value = text;
-      await shareText(text);
+      await shareTextSmart(text);
+    });
+
+    $("#btnQuickCopy").addEventListener("click", async () => {
+      const text = $("#output").value || generateOutput();
+      $("#output").value = text;
+      await copyToClipboard(text);
+    });
+
+    $("#btnQuickTxt").addEventListener("click", () => {
+      const text = $("#output").value || generateOutput();
+      $("#output").value = text;
+      const stamp = (state.date || todayISO()).replaceAll("-","");
+      downloadTextFile(`worklog_${stamp}.txt`, text);
+      toast("TXT 파일로 저장했습니다.");
+    });
+
+    $("#btnQuickKakao").addEventListener("click", async () => {
+      const text = $("#output").value || generateOutput();
+      $("#output").value = text;
+      await copyToClipboard(text);
+      window.open("https://web.kakao.com/", "_blank", "noopener,noreferrer");
+      toast("카카오톡 웹을 열었습니다. (붙여넣기 하세요)");
+    });
+
+    $("#btnQuickMail").addEventListener("click", () => {
+      const text = $("#output").value || generateOutput();
+      $("#output").value = text;
+      const subject = encodeURIComponent("금일 작업내용");
+      const body = encodeURIComponent(text);
+      window.location.href = `mailto:?subject=${subject}&body=${body}`;
     });
 
     $("#btnReset").addEventListener("click", () => {
@@ -862,14 +988,9 @@
 
   // Boot
   load();
-
-  // 첫 화면 1건 기본 생성
-  if(!state.items.length){
-    state.items = [newItem()];
-  }
+  if(!state.items.length) state.items = [newItem()];
   saveLS();
 
-  // hydrate
   $("#drawing").value = state.drawing || "";
   $("#date").value = state.date || todayISO();
   $("#area").value = state.area || "";
@@ -881,6 +1002,8 @@
   bindHeader();
   bindButtons();
   bindItemEvents();
+
+  if(navigator.share) showSharePanel(false);
 })();
 </script>
 </body>
