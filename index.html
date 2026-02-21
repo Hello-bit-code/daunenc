@@ -349,13 +349,16 @@
 
 <script>
 (() => {
-  const UNIT_OPTIONS = ["EA","M","SET","POINT","ROLL","PCS","본"];
+  // ✅ 단위: 전부 선택 가능 + m 입력은 출력에서 mm로 변환
+  // ✅ M(대문자) 제거 (과거 데이터 호환은 아래에서 보정)
+  const UNIT_OPTIONS = ["EA","본","m","mm","SET","POINT","ROLL","PCS"];
   const CATEGORY_OPTIONS = ["TRAY","CONDUIT","ELP","SUPPORT","U-CHANNEL","C-CHANNEL","ANGLE","FITTING","BOX","FASTENER","PAINT","OTHER"];
   const DEFAULT_AREAS = ["PIPE RACK","전기실 1층","전기실 2층","SUBSTATION","UG","TK AREA","에틸렌 B구역"];
 
   const MATERIAL_DICT = [
     { aliases:["전선관","스틸 전선관","STEEL CONDUIT","STEEL CONDUIT PIPE","CONDUIT","CONDUIT PIPE"], canonical:"STEEL CONDUIT", category:"CONDUIT"},
-    { aliases:["CD","CD관","CD PIPE","CD CONDUIT","22C","28C","36C","54C"], canonical:"CD CONDUIT", category:"CONDUIT"},
+    // ✅ 22C/28C/36C/54C 같은 규격은 사용자가 입력(규격)할 수 있으므로, 여기서 CD로 강제 매핑하지 않음
+    { aliases:["CD","CD관","CD PIPE","CD CONDUIT"], canonical:"CD CONDUIT", category:"CONDUIT"},
     { aliases:["후렉시블","후렉쉬블","FLEX","FLEXIBLE","FLEXIBLE CONDUIT"], canonical:"FLEXIBLE CONDUIT", category:"CONDUIT"},
     { aliases:["ELP","ELP 배관","ELP PIPE"], canonical:"ELP", category:"ELP"},
     { aliases:["트레이","케이블트레이","CABLE TRAY","TRAY","CABLETRAY"], canonical:"CABLE TRAY", category:"TRAY"},
@@ -381,10 +384,20 @@
     toast._timer = setTimeout(()=> t.style.display = "none", 2200);
   }
 
+  // ✅ TZ 보정된 오늘 ISO(YYYY-MM-DD)
   function todayISO(){
     const d = new Date();
     const tz = d.getTimezoneOffset() * 60000;
     return new Date(d.getTime() - tz).toISOString().slice(0,10);
+  }
+
+  // ✅ 출력용: YYYY-MM-DD 요일
+  function todayISOWithKoreanDay(){
+    const d = new Date();
+    const days = ["일","월","화","수","목","금","토"];
+    const iso = todayISO();
+    const day = days[d.getDay()];
+    return `${iso} ${day}`;
   }
 
   function normalizeText(s){
@@ -401,8 +414,9 @@
     const raw = (input||"").trim();
     if(!raw) return { canonical:"", category:"", confidence:"" };
 
+    // ✅ 22C/28C/36C 같은 입력은 표준자재명을 STEEL CONDUIT으로 통일 (규격은 사용자가 spec에 입력)
     if(/^\d+(?:\.\d+)?\s*C$/i.test(raw)){
-      return { canonical:"CD CONDUIT", category:"CONDUIT", confidence:"자동분류" };
+      return { canonical:"STEEL CONDUIT", category:"CONDUIT", confidence:"자동분류" };
     }
 
     const up = normalizeText(raw);
@@ -438,6 +452,28 @@
       return { pretty: parts.join("×") };
     }
     return { pretty: s };
+  }
+
+  // ✅ 출력용 수량/단위 처리: m→mm 변환 / 본 유지 / mm 유지 / 기타 그대로
+  function qtyUnitForOutput(qty, unit){
+    const q = (qty ?? "").toString().trim();
+    const u = (unit ?? "").toString().trim();
+    if(!q) return "";
+
+    const n = Number(q);
+    const isNum = !Number.isNaN(n);
+
+    if(u === "m" || u === "M"){
+      if(!isNum) return `${q}${u}`;
+      return `${n * 1000}mm`;
+    }
+    if(u === "mm"){
+      return isNum ? `${n}mm` : `${q}mm`;
+    }
+    if(u === "본"){
+      return `${q}본`;
+    }
+    return u ? `${q}${u}` : q;
   }
 
   const LS_KEY = "worklog_offline_multiwork_all_v2";
@@ -476,6 +512,16 @@
     // ✅ 날짜: 페이지 열 때마다 전 작업을 오늘 날짜로 갱신
     const today = todayISO();
     state.works.forEach(w => { w.date = today; });
+
+    // ✅ 과거 데이터 호환: 단위 "M" → "m"
+    state.works.forEach(w=>{
+      (w.groups||[]).forEach(g=>{
+        (g.items||[]).forEach(it=>{
+          if(it.unit === "M") it.unit = "m";
+        });
+      });
+    });
+
     saveLS();
   }
 
@@ -675,7 +721,6 @@
 
   function addWork(){
     const w = newWork();
-    // ✅ 새 작업도 즉시 오늘 날짜
     w.date = todayISO();
     state.works.push(w);
     render();
@@ -702,54 +747,62 @@
     toast("자재를 추가했습니다. (마지막 구역)");
   }
 
-  function generateOutputForWork(w, idx){
-    const date = w.date || todayISO();
-    const drawing = (w.drawing||"").trim();
-    const baseArea = (w.area||"").trim() || "(미지정)";
+  // ✅ 출력: 사용자가 요청한 포맷으로 고정
+  function generateOutputForWork(w){
+    const dateLine = todayISOWithKoreanDay();
 
-    const header = [
-      `==== 작업 ${idx+1} ====`,
-      `[금일 작업내용]${drawing ? ` (도면: ${drawing})` : ""}`,
-      `- 공정지역: ${baseArea}`,
-      w.memo ? `- 메모: ${w.memo}` : null,
-      `- 날짜: ${date}`,
-      ``
-    ].filter(Boolean).join("\n");
+    const drawing = (w.drawing || "").trim();
+    const baseArea = (w.area || "").trim();
 
-    let n = 1;
     const lines = [];
+    lines.push(dateLine);
+    lines.push("[금일 작업내용]");
+    lines.push(`도면 : ${drawing || ""}`.trimEnd());
 
-    (w.groups || []).forEach((g) => {
-      const areaDetail = (g.areaDetail||"").trim();
-      (g.items || []).forEach((it) => {
-        const canonical = (it.canonical||"").trim();
-        const matFallback = (it.materialInput||"").trim().toUpperCase();
+    const groups = Array.isArray(w.groups) ? w.groups : [];
+
+    groups.forEach((g, gi) => {
+      const areaDetail = (g.areaDetail || "").trim();
+      const areaLine = [baseArea, areaDetail].filter(Boolean).join(" ").trim();
+
+      if(gi === 0){
+        lines.push(`공정지역 : ${areaLine}`);
+      }else{
+        lines.push("");
+        lines.push("[추가 구역]");
+        lines.push(`공정지역 : ${areaLine}`);
+      }
+
+      let n = 1; // ✅ 구역마다 번호 1부터
+      const items = Array.isArray(g.items) ? g.items : [];
+
+      items.forEach(it => {
+        const canonical = (it.canonical || "").trim();
+        const matFallback = (it.materialInput || "").trim();
         const mat = canonical || matFallback;
+        if(!mat && !it.spec && !it.qty && !it.note) return;
 
         const specPretty = parseSpec(it.spec).pretty;
-        const qty = (it.qty||"").toString().trim();
-        const unit = (it.unit||"").trim();
-        const note = (it.note||"").trim();
+        const qtyPart = qtyUnitForOutput(it.qty, it.unit);
+        const note = (it.note || "").trim();
 
-        const isEmpty = !mat && !specPretty && !qty && !note && !areaDetail;
-        if(isEmpty) return;
+        const parts = [];
+        parts.push(`${n})`);
+        parts.push(mat);
+        if(specPretty) parts.push(specPretty);
+        if(qtyPart) parts.push(qtyPart);
+        if(note) parts.push(`(구간: ${note})`);
 
-        const areaPart = areaDetail ? ` (구간: ${areaDetail})` : "";
-        const specPart = specPretty ? ` ${specPretty}` : "";
-        const qtyPart  = (qty && unit) ? `  ${qty}${unit}` : (qty ? `  ${qty}` : "");
-        const notePart = note ? `  (비고: ${note})` : "";
-
-        lines.push(`${n}) ${mat}${specPart}${qtyPart}${areaPart}${notePart}`.replace(/\s+/g," ").trim());
+        lines.push(parts.join(" ").replace(/\s+/g," ").trim());
         n++;
       });
     });
 
-    const body = lines.length ? lines.join("\n") : "(자재/작업 내역이 없습니다)";
-    return header + body;
+    return lines.join("\n").trim();
   }
 
   function generateOutputAllWorks(){
-    return state.works.map((w, idx) => generateOutputForWork(w, idx)).join("\n\n");
+    return state.works.map((w) => generateOutputForWork(w)).join("\n\n");
   }
 
   async function copyToClipboard(text){
@@ -812,7 +865,6 @@
         const idx = state.works.findIndex(x => x.id === workId);
         state.works.splice(idx, 1);
         if(state.works.length === 0) state.works.push(newWork());
-        // 삭제 후도 날짜 오늘로 통일
         const today = todayISO();
         state.works.forEach(x => x.date = today);
         render();
