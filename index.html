@@ -129,6 +129,14 @@
     }
     .btn.danger{ border-color: rgba(251,113,133,.55); }
     .btn.small{ padding: 8px 10px; border-radius: 10px; font-size: 12.5px; }
+    .btn.ghost{
+      background: transparent;
+      border-color: rgba(51,65,85,.55);
+    }
+    .btn.ghost:hover{
+      border-color: rgba(96,165,250,.45);
+      background: rgba(11,15,26,.30);
+    }
 
     .bar{ display:flex; gap:10px; flex-wrap: wrap; justify-content: space-between; align-items:center; }
     .barRight{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
@@ -139,6 +147,7 @@
       border-radius: var(--radius);
       background: rgba(11,15,26,.30);
       padding: 12px;
+      backdrop-filter: blur(8px);
     }
     .workHead{
       display:flex;
@@ -165,6 +174,7 @@
       border-radius: var(--radius2);
       background: rgba(11,15,26,.28);
       padding: 12px;
+      backdrop-filter: blur(8px);
     }
     .groupHead{
       display:flex; align-items:center; justify-content: space-between;
@@ -173,12 +183,17 @@
     .groupHead .left{ display:flex; align-items:center; gap: 10px; flex-wrap: wrap; }
     .groupTitle{ font-size: 13px; font-weight: 850; }
 
+    .bulkWrap{ display:block; }
+    .detailWrap{ display:none; margin-top: 10px; }
+    .group.showDetail .detailWrap{ display:block; }
+
     .items{ display:flex; flex-direction: column; gap: 10px; margin-top: 10px; }
     .item{
       border: 1px solid rgba(51,65,85,.65);
       border-radius: var(--radius2);
       background: rgba(11,15,26,.34);
-      padding: 12px;
+      padding: 10px;
+      backdrop-filter: blur(8px);
     }
     .itemGrid{
       display:grid;
@@ -186,7 +201,9 @@
       gap: 10px;
       align-items: end;
     }
-    .chips{ display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+    .chips{ display:none; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .item.showMeta .chips{ display:flex; }
     .chip{
       font-size: 12px; padding: 6px 10px; border-radius: 999px;
       border: 1px solid rgba(51,65,85,.70);
@@ -194,6 +211,37 @@
       color: var(--muted);
     }
     .chip b{ color: var(--text); }
+
+    /* ✅ 빠른입력 미리보기 */
+    .bulkPreview{ display:none; margin-top: 10px; }
+    .group.showPreview .bulkPreview{ display:block; }
+    .previewCard{
+      border: 1px solid rgba(51,65,85,.65);
+      border-radius: var(--radius2);
+      background: rgba(11,15,26,.30);
+      padding: 10px;
+    }
+    .previewTop{
+      display:flex; align-items:center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .previewTop .left{
+      display:flex; align-items:center; gap: 8px; flex-wrap: wrap;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .kbadge{
+      display:inline-flex;
+      border: 1px solid rgba(51,65,85,.55);
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(17,24,39,.35);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bulkTA{ min-height: 110px; font-family: var(--mono); font-size: 12.5px; line-height: 1.45; white-space: pre; }
 
     .toast{
       position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
@@ -271,9 +319,6 @@
       .full{ grid-column: 1 / -1 !important; }
       .half{ grid-column: span 1 !important; }
       .btnBar{ grid-column: 1 / -1 !important; justify-content:flex-end; }
-
-      .watermark{ bottom: 8px; }
-      .watermark .wmCard{ font-size: 10.5px; padding: 7px 10px; }
     }
   </style>
 </head>
@@ -286,7 +331,7 @@
       <div class="title">
         <h1>오프라인 물량/작업 보고</h1>
         <div class="sub">서버 없이 사용 · 기기(LocalStorage) 저장
-입력팁: 300*150*3000 / 300×150×3000 / 300x150x3000</div>
+빠른입력(기본): 한 줄 = 자재 1건 / 같은 자재 반복이면 자재명 생략 가능</div>
       </div>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -307,8 +352,8 @@
     </div>
 
     <div class="hint" style="margin-bottom:10px;">
-      ✅ 날짜는 페이지를 열 때마다 <b>자동으로 오늘 날짜로 갱신</b>됩니다. (모든 작업 동일 적용)
-      결과는 <b>항상 전체 작업</b>을 한 번에 출력합니다.
+      ✅ 구역은 <b>빠른입력 → 미리보기 수정 → 확정</b> 흐름이 기본입니다. (실수 방지)<br/>
+      ✅ 필요하면 <b>상세 입력</b>을 열어 개별 카드로도 수정할 수 있습니다.
     </div>
 
     <div class="works" id="works"></div>
@@ -401,7 +446,6 @@
       .replaceAll('"',"&quot;").replaceAll("'","&#039;");
   }
 
-  // ✅ 규격(예: 28C)은 "자재명 자동매핑 대상"이 아님 → 여기서는 규격으로 판단해 매핑하지 않음
   function isConduitCodeOnly(raw){
     return /^\d+(?:\.\d+)?\s*C$/i.test((raw||"").trim());
   }
@@ -439,39 +483,163 @@
   }
 
   function parseSpec(spec){
-    const s = (spec||"").trim();
-    if(!s) return { pretty:"" };
-    const m = s.replace(/,/g,"").match(/^(\d+(?:\.\d+)?)\s*[xX×\*]\s*(\d+(?:\.\d+)?)\s*(?:[xX×\*]\s*(\d+(?:\.\d+)?))?\s*$/);
+    const s0 = (spec||"").trim();
+    if(!s0) return { pretty:"" };
+    const s = s0.replace(/,/g,"").replace(/\s+/g," ").trim();
+
+    let m = s.match(/^(\d+(?:\.\d+)?)\s*[xX×\*]\s*(\d+(?:\.\d+)?)\s*(?:[xX×\*]\s*(\d+(?:\.\d+)?))?\s*$/);
     if(m){
       const parts = [m[1], m[2]].concat(m[3] ? [m[3]] : []);
       return { pretty: parts.join("×") };
     }
-    return { pretty: s };
+
+    m = s.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(\d+(?:\.\d+)?))?\s*$/);
+    if(m){
+      const parts = [m[1], m[2]].concat(m[3] ? [m[3]] : []);
+      return { pretty: parts.join("×") };
+    }
+
+    return { pretty: s0 };
   }
 
-  // ✅ 출력용 단위 처리: m→mm / 본 유지 / mm 유지
   function qtyUnitForOutput(qty, unit){
     const q = (qty ?? "").toString().trim();
-    const u = (unit ?? "").toString().trim();
+    const u0 = (unit ?? "").toString().trim();
     if(!q) return "";
 
     const n = Number(q);
     const isNum = !Number.isNaN(n);
 
-    if(u === "m" || u === "M"){
-      if(!isNum) return `${q}${u}`;
+    const u = u0.toLowerCase();
+
+    if(u === "m"){
+      if(!isNum) return `${q}${u0}`;
       return `${n * 1000}mm`;
     }
     if(u === "mm"){
       return isNum ? `${n}mm` : `${q}mm`;
     }
-    if(u === "본"){
+    if(u0 === "본"){
       return `${q}본`;
     }
-    return u ? `${q}${u}` : q;
+    return u0 ? `${q}${u0}` : q;
   }
 
-  const LS_KEY = "worklog_offline_multiwork_all_v2";
+  function parseQtyUnitToken(token){
+    const t = (token||"").trim();
+    if(!t) return null;
+    const m = t.match(/^(\d+(?:\.\d+)?)(EA|본|m|mm|MM|SET|POINT|ROLL|PCS)$/i);
+    if(!m) return null;
+
+    const qty = m[1];
+    const u = m[2].toUpperCase();
+    let unit = m[2];
+
+    if(u === "M") unit = "m";
+    else if(u === "MM") unit = "mm";
+    else unit = m[2];
+
+    return { qty, unit };
+  }
+
+  function parseBulkLine(line){
+    const raw = (line||"").trim();
+    if(!raw) return null;
+
+    let note = "";
+    let main = raw;
+    const paren = raw.match(/\((.*?)\)\s*$/);
+    if(paren){
+      note = (paren[1]||"").replace(/^구간\s*:\s*/,"").trim();
+      main = raw.slice(0, paren.index).trim();
+    }
+
+    let tokens = main.replace(/\t+/g," ").split(/\s+/).filter(Boolean);
+
+    let qty = "";
+    let unit = "EA";
+    let qtyIdx = -1;
+
+    for(let i=tokens.length-1; i>=0; i--){
+      const q = parseQtyUnitToken(tokens[i]);
+      if(q){
+        qty = q.qty;
+        unit = q.unit;
+        qtyIdx = i;
+        break;
+      }
+    }
+
+    if(qtyIdx === -1){
+      for(let i=tokens.length-2; i>=0; i--){
+        const n = tokens[i];
+        const u = tokens[i+1];
+        if(/^\d+(?:\.\d+)?$/.test(n) && ["EA","본","m","mm","MM","SET","POINT","ROLL","PCS"].includes(u)){
+          qty = n;
+          unit = (u === "MM" ? "mm" : (u === "M" ? "m" : u));
+          tokens.splice(i+1,1);
+          tokens.splice(i,1);
+          break;
+        }
+      }
+    }else{
+      tokens.splice(qtyIdx,1);
+    }
+
+    let spec = "";
+
+    const idxMul = tokens.findIndex(t => /[xX×\*]/.test(t) && /\d/.test(t));
+    if(idxMul >= 0){
+      spec = tokens[idxMul];
+      tokens.splice(idxMul,1);
+    }else{
+      for(let i=0; i<=tokens.length-2; i++){
+        if(/^\d+(?:\.\d+)?$/.test(tokens[i]) && /^\d+(?:\.\d+)?$/.test(tokens[i+1])){
+          const t3 = tokens[i+2];
+          if(t3 && /^\d+(?:\.\d+)?$/.test(t3)){
+            spec = `${tokens[i]} ${tokens[i+1]} ${t3}`;
+            tokens.splice(i,3);
+          }else{
+            spec = `${tokens[i]} ${tokens[i+1]}`;
+            tokens.splice(i,2);
+          }
+          break;
+        }
+      }
+    }
+
+    if(!spec){
+      const idx = tokens.findIndex(t => /^\d+(?:\.\d+)?(C|MM)$/i.test(t));
+      if(idx >= 0){
+        spec = tokens[idx];
+        tokens.splice(idx,1);
+      }
+    }
+
+    if(!spec && tokens.length >= 2){
+      const last = tokens[tokens.length - 1];
+      const isSingleNumber = /^\d+(?:\.\d+)?$/.test(last);
+      if(isSingleNumber){
+        const candWith = tokens.join(" ").trim();
+        const candWithout = tokens.slice(0, -1).join(" ").trim();
+
+        const mWith = mapMaterial(candWith);
+        const mWithout = mapMaterial(candWithout);
+
+        const score = (c) => (c==="정확"?4 : c==="포함"?3 : c==="유사"?2 : c==="원문"?1 : 0);
+
+        if(score(mWithout.confidence) > score(mWith.confidence)){
+          spec = last;
+          tokens = tokens.slice(0,-1);
+        }
+      }
+    }
+
+    const materialInput = tokens.join(" ").trim();
+    return { materialInput, spec, qty, unit, note };
+  }
+
+  const LS_KEY = "worklog_offline_multiwork_all_v6_bulk_preview_edit_commit";
   const state = { works: [] };
 
   function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
@@ -479,7 +647,17 @@
   function newMaterial(){
     return { materialInput:"", canonical:"", category:"OTHER", spec:"", qty:"", unit:"EA", note:"", lockAuto:false };
   }
-  function newGroup(){ return { areaDetail:"", items:[ newMaterial() ] }; }
+  function newGroup(){
+    return {
+      areaDetail:"",
+      bulk:"",
+      showDetail:false,
+      // ✅ 빠른입력 미리보기 데이터(확정 전)
+      bulkPreview: [],
+      showPreview:false,
+      items:[ newMaterial() ],
+    };
+  }
   function newWork(){
     return {
       id: uid(),
@@ -507,11 +685,16 @@
     const today = todayISO();
     state.works.forEach(w => { w.date = today; });
 
-    // 과거 호환: "M" → "m"
     state.works.forEach(w=>{
       (w.groups||[]).forEach(g=>{
+        if(typeof g.bulk !== "string") g.bulk = "";
+        if(typeof g.showDetail !== "boolean") g.showDetail = false;
+        if(!Array.isArray(g.bulkPreview)) g.bulkPreview = [];
+        if(typeof g.showPreview !== "boolean") g.showPreview = false;
+
         (g.items||[]).forEach(it=>{
           if(it.unit === "M") it.unit = "m";
+          if(it.unit === "MM") it.unit = "mm";
         });
       });
     });
@@ -592,7 +775,6 @@
           <div class="hint">이 작업의 작업구역 상세 (구역/자재)</div>
           <div class="barRight">
             <button class="btn js-addGroup" type="button">구역 추가</button>
-            <button class="btn js-addMat" type="button">자재 추가</button>
           </div>
         </div>
 
@@ -608,6 +790,9 @@
         groupEl.dataset.w = w.id;
         groupEl.dataset.g = String(gi);
 
+        if(g.showDetail) groupEl.classList.add("showDetail");
+        if(g.showPreview) groupEl.classList.add("showPreview");
+
         const itemCount = (g.items || []).length;
 
         groupEl.innerHTML = `
@@ -616,8 +801,8 @@
               <div class="groupTitle">구역 ${gi+1}</div>
               <div class="tag">자재 ${itemCount}건</div>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <button class="btn small js-addMatInGroup" type="button">자재 추가</button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn small ghost js-toggleDetail" type="button">${g.showDetail ? "상세 닫기" : "상세 입력"}</button>
               <button class="btn small danger js-delGroup" type="button">구역 삭제</button>
             </div>
           </div>
@@ -629,16 +814,108 @@
             </div>
           </div>
 
-          <div class="items js-items"></div>
+          <div class="hr"></div>
+
+          <div class="bulkWrap">
+            <div class="bar">
+              <div class="hint">
+                빠른입력: <b>한 줄=자재 1건</b> · 같은 자재 반복이면 <b>자재명 생략 가능</b>
+              </div>
+              <div class="barRight">
+                <button class="btn small js-applyBulk" type="button">빠른입력 적용</button>
+                <button class="btn small danger js-clearBulk" type="button">지우기</button>
+              </div>
+            </div>
+
+            <div class="grid">
+              <div class="field tone-slate span12" style="grid-column: span 12;">
+                <label>대량 입력</label>
+                <textarea class="js-bulk bulkTA" placeholder="예)
+전선관 28C 3000MM
+전선관 36C 4000MM
+104C 1000MM
+TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
+              </div>
+            </div>
+
+            <div class="bulkPreview">
+              <div class="hr"></div>
+              <div class="bar">
+                <div class="hint">✅ 적용 미리보기(수정 가능) → <b>확정</b>을 누르면 상세 데이터로 반영됩니다.</div>
+                <div class="barRight">
+                  <button class="btn small js-commitPreview" type="button">확정</button>
+                  <button class="btn small danger js-cancelPreview" type="button">취소</button>
+                </div>
+              </div>
+
+              <div class="works" style="gap:10px;">
+                ${(g.bulkPreview||[]).map((p, pi) => `
+                  <div class="previewCard" data-pi="${pi}">
+                    <div class="previewTop">
+                      <div class="left">
+                        <span class="kbadge">#${pi+1}</span>
+                        <span class="kbadge" title="원문">${esc(p._raw||"")}</span>
+                      </div>
+                      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn small danger js-delPreview" type="button">삭제</button>
+                      </div>
+                    </div>
+
+                    <div class="grid">
+                      <div class="field tone-violet span6" style="grid-column: span 6;">
+                        <label>자재명</label>
+                        <input class="js-p-mat" value="${esc(p.materialInput||"")}" placeholder="예: 전선관 / TRAY" />
+                      </div>
+
+                      <div class="field tone-amber span3" style="grid-column: span 3;">
+                        <label>규격(Spec)</label>
+                        <input class="js-p-spec" value="${esc(p.spec||"")}" placeholder="예: 28C / 300" />
+                      </div>
+
+                      <div class="field tone-green span2" style="grid-column: span 2;">
+                        <label>수량</label>
+                        <input class="js-p-qty" value="${esc(p.qty||"")}" placeholder="예: 12" inputmode="decimal" />
+                      </div>
+
+                      <div class="field tone-green span1" style="grid-column: span 1;">
+                        <label>단위</label>
+                        <select class="js-p-unit">
+                          ${UNIT_OPTIONS.map(u => `<option value="${u}" ${u===p.unit ? "selected":""}>${u}</option>`).join("")}
+                        </select>
+                      </div>
+
+                      <div class="field tone-slate span12" style="grid-column: span 12;">
+                        <label>구간/비고</label>
+                        <input class="js-p-note" value="${esc(p.note||"")}" placeholder="예: Column 8~25" />
+                      </div>
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          </div>
+
+          <div class="detailWrap">
+            <div class="hr"></div>
+
+            <div class="bar">
+              <div class="hint">상세 입력: 개별 수정/추가/삭제</div>
+              <div class="barRight">
+                <button class="btn small js-addMatInGroup" type="button">자재 추가</button>
+              </div>
+            </div>
+
+            <div class="items js-items"></div>
+          </div>
         `;
 
         groupsHost.appendChild(groupEl);
 
+        // 상세 items 렌더(상세 열었을 때만 유의미하지만, 데이터는 항상 유지)
         const itemsHost = groupEl.querySelector(".js-items");
         (g.items || []).forEach((it, ii) => {
           const mapped = mapMaterial(it.materialInput);
           if(it.materialInput && !it.lockAuto){
-            // 규격(28C 등)만 넣은 경우는 canonical을 덮지 않음
             if(mapped.canonical){
               it.canonical = mapped.canonical;
               it.category = mapped.category || "OTHER";
@@ -657,16 +934,16 @@
             <div class="itemGrid">
               <div class="field tone-violet full" style="grid-column: span 3;">
                 <label>자재명(자유 입력)</label>
-                <input class="js-mat" placeholder="예: U찬넬 / C찬넬 / 전선관 / 트레이" value="${esc(it.materialInput||"")}" />
+                <input class="js-mat" placeholder="예: 전선관 / TRAY / U찬넬" value="${esc(it.materialInput||"")}" />
               </div>
 
               <div class="field tone-blue full" style="grid-column: span 2;">
                 <label>표준 자재명(수정 가능)</label>
-                <input class="js-canon" placeholder="예: U-CHANNEL / C-CHANNEL" value="${esc(it.canonical||"")}" />
+                <input class="js-canon" placeholder="예: STEEL CONDUIT" value="${esc(it.canonical||"")}" />
               </div>
 
               <div class="field tone-slate half" style="grid-column: span 1;">
-                <label>카테고리(수정 가능)</label>
+                <label>카테고리</label>
                 <select class="js-cat">
                   ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${c===it.category ? "selected":""}>${c}</option>`).join("")}
                 </select>
@@ -674,12 +951,12 @@
 
               <div class="field tone-amber half" style="grid-column: span 2;">
                 <label>규격(Spec)</label>
-                <input class="js-spec" placeholder="예: 600*150*3000 / 28MM / 28C" value="${esc(it.spec||"")}" />
+                <input class="js-spec" placeholder="예: 28C / 600*150*3000 / 300" value="${esc(it.spec||"")}" />
               </div>
 
               <div class="field tone-green half" style="grid-column: span 1;">
                 <label>수량</label>
-                <input class="js-qty" inputmode="decimal" placeholder="예: 12" value="${esc(it.qty||"")}" />
+                <input class="js-qty" inputmode="decimal" placeholder="예: 3 / 3000" value="${esc(it.qty||"")}" />
               </div>
 
               <div class="field tone-green half" style="grid-column: span 1;">
@@ -691,10 +968,11 @@
 
               <div class="field tone-slate full" style="grid-column: span 11;">
                 <label>구간/비고(선택)</label>
-                <input class="js-note" placeholder="예: welding / 설치 / 철거 / 보강" value="${esc(it.note||"")}" />
+                <input class="js-note" placeholder="예: Column 8~25 / 설치 / 철거" value="${esc(it.note||"")}" />
               </div>
 
               <div class="btnBar" style="grid-column: span 1; display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn small ghost js-meta" type="button">상세</button>
                 <button class="btn small js-auto" type="button" title="자동 제안 적용">자동</button>
                 <button class="btn small js-dup" type="button">복제</button>
                 <button class="btn small danger js-delItem" type="button">삭제</button>
@@ -733,18 +1011,6 @@
     toast("구역을 추가했습니다.");
   }
 
-  function addMaterialToLastGroupOfWork(workId){
-    const w = state.works.find(x => x.id === workId);
-    if(!w) return;
-    ensureWorkHasAtLeastOneGroup(w);
-    const g = w.groups[w.groups.length - 1];
-    g.items = g.items || [];
-    g.items.push(newMaterial());
-    render();
-    toast("자재를 추가했습니다. (마지막 구역)");
-  }
-
-  // ✅ 출력: 날짜 + [금일 작업내용]은 맨 위 1번만 / 작업 여러 개면 '■ 추가 작업'으로 구분
   function generateOutputAllWorks(){
     const out = [];
     out.push(todayISOWithKoreanDay());
@@ -847,6 +1113,10 @@
     });
   }
 
+  function ensureWorkHasAtLeastOneGroup(w){
+    if(!Array.isArray(w.groups) || w.groups.length === 0) w.groups = [ newGroup() ];
+  }
+
   function bindDynamic(){
     const host = $("#works");
 
@@ -873,16 +1143,19 @@
         return;
       }
 
-      if(e.target.closest(".js-addMat")){
-        addMaterialToLastGroupOfWork(workId);
-        return;
-      }
-
       const groupEl = e.target.closest(".group");
       if(groupEl){
         const gi = Number(groupEl.dataset.g);
         const g = (w.groups || [])[gi];
         if(!g) return;
+
+        if(e.target.closest(".js-toggleDetail")){
+          g.showDetail = !g.showDetail;
+          saveLS();
+          render();
+          toast(g.showDetail ? "상세 입력을 열었습니다." : "상세 입력을 닫았습니다.");
+          return;
+        }
 
         if(e.target.closest(".js-delGroup")){
           w.groups.splice(gi, 1);
@@ -900,11 +1173,151 @@
           return;
         }
 
+        if(e.target.closest(".js-clearBulk")){
+          g.bulk = "";
+          g.bulkPreview = [];
+          g.showPreview = false;
+          saveLS();
+          render();
+          toast("대량 입력을 지웠습니다.");
+          return;
+        }
+
+        // ✅ 빠른입력 적용 => items에 바로 넣지 않고, bulkPreview 생성 후 표시
+        if(e.target.closest(".js-applyBulk")){
+          const ta = groupEl.querySelector(".js-bulk");
+          const bulk = (ta?.value || "").trim();
+          if(!bulk){
+            toast("대량 입력 내용이 없습니다.");
+            return;
+          }
+          const lines = bulk.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+          if(lines.length === 0){
+            toast("대량 입력 내용이 없습니다.");
+            return;
+          }
+
+          const preview = [];
+          let lastMaterialInput = "";
+
+          for(const line of lines){
+            const parsed = parseBulkLine(line);
+            if(!parsed) continue;
+
+            if(!parsed.materialInput && lastMaterialInput){
+              parsed.materialInput = lastMaterialInput; // 상속
+            }
+            if(parsed.materialInput){
+              lastMaterialInput = parsed.materialInput;
+            }
+            if(!parsed.materialInput) continue;
+
+            preview.push({
+              _raw: line,
+              materialInput: parsed.materialInput,
+              spec: parsed.spec,
+              qty: parsed.qty,
+              unit: parsed.unit || "EA",
+              note: parsed.note || "",
+            });
+          }
+
+          if(preview.length === 0){
+            toast("인식 가능한 항목이 없습니다.");
+            return;
+          }
+
+          g.bulk = bulk;
+          g.bulkPreview = preview;
+          g.showPreview = true;
+          saveLS();
+          render();
+          toast(`미리보기 ${preview.length}건 생성`);
+          return;
+        }
+
+        // ✅ 미리보기 삭제
+        if(e.target.closest(".js-delPreview")){
+          const card = e.target.closest(".previewCard");
+          const pi = Number(card?.dataset.pi);
+          if(Number.isNaN(pi)) return;
+          g.bulkPreview.splice(pi, 1);
+          if(g.bulkPreview.length === 0) g.showPreview = false;
+          saveLS();
+          render();
+          toast("미리보기 항목을 삭제했습니다.");
+          return;
+        }
+
+        // ✅ 미리보기 확정 => bulkPreview를 items로 반영
+        if(e.target.closest(".js-commitPreview")){
+          if(!Array.isArray(g.bulkPreview) || g.bulkPreview.length === 0){
+            toast("확정할 미리보기가 없습니다.");
+            return;
+          }
+
+          g.items = g.items || [];
+
+          for(const p of g.bulkPreview){
+            const it = newMaterial();
+            it.materialInput = (p.materialInput||"").trim();
+            it.spec = (p.spec||"").trim();
+            it.qty = (p.qty||"").trim();
+            it.unit = (p.unit||"EA").trim();
+            it.note = (p.note||"").trim();
+
+            const mapped = mapMaterial(it.materialInput);
+            if(mapped.canonical){
+              it.canonical = mapped.canonical;
+              it.category = mapped.category || "OTHER";
+            }else{
+              it.canonical = (it.materialInput||"").toUpperCase();
+              it.category = "OTHER";
+            }
+
+            g.items.push(it);
+          }
+
+          // 첫 빈행 제거
+          if(g.items.length > 1){
+            g.items = g.items.filter((x, idx) => {
+              if(idx === 0){
+                const empty = !x.materialInput && !x.spec && !x.qty && !x.note;
+                return !empty;
+              }
+              return true;
+            });
+          }
+
+          g.bulkPreview = [];
+          g.showPreview = false;
+          g.showDetail = true; // 확정 후 바로 상세 열어주는 게 수정하기 편함
+          saveLS();
+          render();
+          toast("미리보기를 확정하여 상세 데이터에 반영했습니다.");
+          return;
+        }
+
+        // ✅ 미리보기 취소
+        if(e.target.closest(".js-cancelPreview")){
+          g.bulkPreview = [];
+          g.showPreview = false;
+          saveLS();
+          render();
+          toast("미리보기를 취소했습니다.");
+          return;
+        }
+
         const itemEl = e.target.closest(".item");
         if(itemEl){
           const ii = Number(itemEl.dataset.i);
           const it = (g.items || [])[ii];
           if(!it) return;
+
+          if(e.target.closest(".js-meta")){
+            itemEl.classList.toggle("showMeta");
+            return;
+          }
 
           if(e.target.closest(".js-delItem")){
             g.items.splice(ii, 1);
@@ -937,6 +1350,7 @@
       }
     });
 
+    // ✅ 미리보기 입력 반영(그룹 bulkPreview 배열 직접 업데이트)
     host.addEventListener("input", (e) => {
       const workEl = e.target.closest(".work");
       if(!workEl) return;
@@ -978,13 +1392,35 @@
         return;
       }
 
+      if(e.target.classList.contains("js-bulk")){
+        g.bulk = e.target.value;
+        saveLS();
+        return;
+      }
+
+      // 미리보기 카드 편집
+      const pCard = e.target.closest(".previewCard");
+      if(pCard){
+        const pi = Number(pCard.dataset.pi);
+        if(Number.isNaN(pi) || !g.bulkPreview?.[pi]) return;
+        const p = g.bulkPreview[pi];
+
+        if(e.target.classList.contains("js-p-mat"))  p.materialInput = e.target.value;
+        if(e.target.classList.contains("js-p-spec")) p.spec = e.target.value;
+        if(e.target.classList.contains("js-p-qty"))  p.qty = e.target.value;
+        if(e.target.classList.contains("js-p-note")) p.note = e.target.value;
+
+        saveLS();
+        return;
+      }
+
+      // 상세 item 수정
       const itemEl = e.target.closest(".item");
       if(!itemEl) return;
       const ii = Number(itemEl.dataset.i);
       const it = (g.items || [])[ii];
       if(!it) return;
 
-      // ✅ 핵심: 자재명 입력 시 옆 칸(표준자재명/카테고리/칩) "즉시" 반영 (렌더/새로고침 불필요)
       if(e.target.classList.contains("js-mat")){
         it.materialInput = e.target.value;
         const mapped = mapMaterial(it.materialInput);
@@ -1060,14 +1496,28 @@
         return;
       }
 
-      const itemEl = e.target.closest(".item");
-      if(!itemEl) return;
-
       const groupEl = e.target.closest(".group");
       if(!groupEl) return;
       const gi = Number(groupEl.dataset.g);
       const g = (w.groups || [])[gi];
       if(!g) return;
+
+      // 미리보기 unit 변경
+      const pCard = e.target.closest(".previewCard");
+      if(pCard){
+        const pi = Number(pCard.dataset.pi);
+        if(Number.isNaN(pi) || !g.bulkPreview?.[pi]) return;
+        const p = g.bulkPreview[pi];
+        if(e.target.classList.contains("js-p-unit")){
+          p.unit = e.target.value;
+          saveLS();
+        }
+        return;
+      }
+
+      // 상세 item unit/cat 변경
+      const itemEl = e.target.closest(".item");
+      if(!itemEl) return;
 
       const ii = Number(itemEl.dataset.i);
       const it = (g.items || [])[ii];
@@ -1076,11 +1526,9 @@
       if(e.target.classList.contains("js-cat")){
         it.category = e.target.value;
         it.lockAuto = true;
-
         const row = e.target.closest(".item");
         const chipLock = row?.querySelector(".js-chipLock");
         if(chipLock) chipLock.innerHTML = `<b>자동잠금</b> ON`;
-
         saveLS();
         return;
       }
@@ -1093,11 +1541,57 @@
     });
   }
 
+  function bindStaticButtons(){
+    $("#btnAddWork").addEventListener("click", addWork);
+
+    $("#btnSaveAll").addEventListener("click", () => {
+      saveLS();
+      toast("저장했습니다. (이 기기 저장)");
+    });
+
+    $("#btnGenerateAll").addEventListener("click", () => {
+      $("#output").value = generateOutputAllWorks();
+      toast("전체 작업 결과를 생성했습니다.");
+    });
+
+    $("#btnCopy").addEventListener("click", async () => {
+      const text = $("#output").value || generateOutputAllWorks();
+      $("#output").value = text;
+      await copyToClipboard(text);
+    });
+
+    $("#btnReset").addEventListener("click", () => {
+      const ok = confirm("이 기기에 저장된 모든 데이터가 삭제됩니다. 계속할까요?");
+      if(!ok) return;
+      localStorage.removeItem(LS_KEY);
+      location.reload();
+    });
+  }
+
   // Boot
   load();
   render();
   bindStaticButtons();
   bindDynamic();
+
+  async function copyToClipboard(text){
+    try{
+      await navigator.clipboard.writeText(text);
+      toast("클립보드에 복사했습니다.");
+      return true;
+    }catch(e){
+      const out = $("#output");
+      out.focus(); out.select();
+      try{
+        document.execCommand("copy");
+        toast("복사했습니다. (호환 모드)");
+        return true;
+      }catch(_){
+        toast("복사 실패: 직접 선택 후 복사하세요.");
+        return false;
+      }
+    }
+  }
 })();
 </script>
 </body>
