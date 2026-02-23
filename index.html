@@ -183,7 +183,6 @@
     .groupHead .left{ display:flex; align-items:center; gap: 10px; flex-wrap: wrap; }
     .groupTitle{ font-size: 13px; font-weight: 850; }
 
-    .bulkWrap{ display:block; }
     .detailWrap{ display:none; margin-top: 10px; }
     .group.showDetail .detailWrap{ display:block; }
 
@@ -212,9 +211,8 @@
     }
     .chip b{ color: var(--text); }
 
-    /* ✅ 빠른입력 미리보기 */
-    .bulkPreview{ display:none; margin-top: 10px; }
-    .group.showPreview .bulkPreview{ display:block; }
+    .bulkList{ display:none; margin-top: 10px; }
+    .group.showBulkList .bulkList{ display:block; }
     .previewCard{
       border: 1px solid rgba(51,65,85,.65);
       border-radius: var(--radius2);
@@ -225,11 +223,6 @@
       display:flex; align-items:center; justify-content: space-between;
       gap: 10px; flex-wrap: wrap;
       margin-bottom: 8px;
-    }
-    .previewTop .left{
-      display:flex; align-items:center; gap: 8px; flex-wrap: wrap;
-      font-size: 12.5px;
-      color: var(--muted);
     }
     .kbadge{
       display:inline-flex;
@@ -331,7 +324,11 @@
       <div class="title">
         <h1>오프라인 물량/작업 보고</h1>
         <div class="sub">서버 없이 사용 · 기기(LocalStorage) 저장
-빠른입력(기본): 한 줄 = 자재 1건 / 같은 자재 반복이면 자재명 생략 가능</div>
+빠른입력: 한 줄=자재 1건(또는 규격×수량EA 세트 여러 개면 자동 분해)
+자재명 안 쓰면 직전 자재명 자동 상속
+예) U-CHANNEL 400×6EA 200×50EA
+예) CABLE TRAY 300 200MM / 600 100MM
+예) 자재명 100*25 300MM 8EA</div>
       </div>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -352,8 +349,8 @@
     </div>
 
     <div class="hint" style="margin-bottom:10px;">
-      ✅ 구역은 <b>빠른입력 → 미리보기 수정 → 확정</b> 흐름이 기본입니다. (실수 방지)<br/>
-      ✅ 필요하면 <b>상세 입력</b>을 열어 개별 카드로도 수정할 수 있습니다.
+      ✅ 기본은 <b>빠른입력</b>으로 넣고, 아래 리스트에서 바로 수정하세요.<br/>
+      ✅ 필요할 때만 <b>상세 입력</b>을 열어 개별 카드로 추가/삭제하세요.
     </div>
 
     <div class="works" id="works"></div>
@@ -487,12 +484,14 @@
     if(!s0) return { pretty:"" };
     const s = s0.replace(/,/g,"").replace(/\s+/g," ").trim();
 
+    // 600*150*3000 같은 치수
     let m = s.match(/^(\d+(?:\.\d+)?)\s*[xX×\*]\s*(\d+(?:\.\d+)?)\s*(?:[xX×\*]\s*(\d+(?:\.\d+)?))?\s*$/);
     if(m){
       const parts = [m[1], m[2]].concat(m[3] ? [m[3]] : []);
       return { pretty: parts.join("×") };
     }
 
+    // "500 300 200"
     m = s.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(\d+(?:\.\d+)?))?\s*$/);
     if(m){
       const parts = [m[1], m[2]].concat(m[3] ? [m[3]] : []);
@@ -525,27 +524,70 @@
     return u0 ? `${q}${u0}` : q;
   }
 
+  function isCountUnit(u){
+    return ["EA","본","SET","POINT","ROLL","PCS"].includes((u||"").toUpperCase());
+  }
+  function isLengthUnit(u){
+    return ["m","mm","M","MM"].includes((u||"").toString());
+  }
+
   function parseQtyUnitToken(token){
     const t = (token||"").trim();
     if(!t) return null;
-    const m = t.match(/^(\d+(?:\.\d+)?)(EA|본|m|mm|MM|SET|POINT|ROLL|PCS)$/i);
+    const m = t.match(/^(\d+(?:\.\d+)?)(EA|본|m|mm|MM|M|SET|POINT|ROLL|PCS)$/);
     if(!m) return null;
 
     const qty = m[1];
-    const u = m[2].toUpperCase();
-    let unit = m[2];
-
-    if(u === "M") unit = "m";
-    else if(u === "MM") unit = "mm";
-    else unit = m[2];
-
+    const u = m[2];
+    const U = u.toUpperCase();
+    let unit = u;
+    if(U === "M") unit = "m";
+    if(U === "MM") unit = "mm";
     return { qty, unit };
   }
 
-  function parseBulkLine(line){
-    const raw = (line||"").trim();
-    if(!raw) return null;
+  function attachExtraToNote(note, extra){
+    const n = (note||"").trim();
+    const e = (extra||"").trim();
+    if(!e) return n;
+    if(!n) return e;
+    return `${n} / ${e}`;
+  }
 
+  // ✅ 작업/가공 같은 키워드는 note로 이동 (WELDING은 note로 취급하지 않음)
+  function isWordNoteToken(t){
+    const s = (t||"").trim();
+    if(!s) return false;
+    const up = s.toUpperCase();
+    return ["작업","가공","설치","철거","보강","제작","수정","가설","해체"].includes(s) || ["WORK","FAB","FABRICATE","INSTALL","REMOVE"].includes(up);
+  }
+
+  // ✅ "400×6EA" / "200x24EA" 같은 세트(여러 개 가능) 파싱
+  function parseSizeCountPairs(tokens){
+    const pairs = [];
+    const rx = /^(\d+(?:\.\d+)?)\s*[xX×\*]\s*(\d+(?:\.\d+)?)(EA|본|SET|PCS|POINT|ROLL)$/i;
+
+    for(let i=0; i<tokens.length; i++){
+      const t = (tokens[i]||"").replace(/\s+/g,"");
+      const m = t.match(rx);
+      if(m){
+        pairs.push({
+          size: m[1],
+          qty: m[2],
+          unit: m[3].toUpperCase() === "PCS" ? "PCS" : m[3].toUpperCase()
+        });
+        tokens[i] = ""; // 소비 처리
+      }
+    }
+    return pairs;
+  }
+
+  // ✅ 한 줄에서 "자재 여러 개" 만들 수 있게: 배열 반환
+  function parseBulkLineToItems(line){
+    const raw = (line||"").trim();
+    if(!raw) return [];
+
+    // (구간: ... ) 끝 처리
     let note = "";
     let main = raw;
     const paren = raw.match(/\((.*?)\)\s*$/);
@@ -556,52 +598,91 @@
 
     let tokens = main.replace(/\t+/g," ").split(/\s+/).filter(Boolean);
 
-    let qty = "";
-    let unit = "EA";
-    let qtyIdx = -1;
+    // 1) "규격×수량EA" 세트 여러 개 추출
+    const pairs = parseSizeCountPairs(tokens);
 
-    for(let i=tokens.length-1; i>=0; i--){
-      const q = parseQtyUnitToken(tokens[i]);
+    // 2) 작업/가공 등의 단어를 note로 이동
+    const noteTokens = [];
+    const remainTokens = [];
+    for(const t of tokens){
+      const tt = (t||"").trim();
+      if(!tt) continue;
+      if(isWordNoteToken(tt)){
+        noteTokens.push(tt);
+      }else{
+        remainTokens.push(tt);
+      }
+    }
+    if(noteTokens.length){
+      note = attachExtraToNote(note, noteTokens.join(" "));
+    }
+
+    // 3) tail qty/unit 최대 2개 추출 (300MM 8EA 같은 케이스)
+    const tail = [];
+    for(let i=remainTokens.length-1; i>=0 && tail.length<2; i--){
+      const q = parseQtyUnitToken(remainTokens[i]);
       if(q){
-        qty = q.qty;
-        unit = q.unit;
-        qtyIdx = i;
+        tail.unshift({ ...q, _idx:i });
+      }else{
         break;
       }
     }
-
-    if(qtyIdx === -1){
-      for(let i=tokens.length-2; i>=0; i--){
-        const n = tokens[i];
-        const u = tokens[i+1];
-        if(/^\d+(?:\.\d+)?$/.test(n) && ["EA","본","m","mm","MM","SET","POINT","ROLL","PCS"].includes(u)){
-          qty = n;
-          unit = (u === "MM" ? "mm" : (u === "M" ? "m" : u));
-          tokens.splice(i+1,1);
-          tokens.splice(i,1);
-          break;
+    if(tail.length){
+      const firstIdx = tail[0]._idx;
+      remainTokens.splice(firstIdx, remainTokens.length - firstIdx);
+    }else{
+      // "30 POINT" 형태
+      if(remainTokens.length >= 2){
+        const n = remainTokens[remainTokens.length-2];
+        const u = remainTokens[remainTokens.length-1];
+        if(/^\d+(?:\.\d+)?$/.test(n) && ["EA","본","m","mm","MM","M","SET","POINT","ROLL","PCS"].includes(u)){
+          tail.push({ qty:n, unit:(u==="MM"?"mm":(u==="M"?"m":u)) });
+          remainTokens.splice(remainTokens.length-2,2);
         }
       }
-    }else{
-      tokens.splice(qtyIdx,1);
     }
 
+    let qty = "";
+    let unit = "EA";
+    let extraCount = "";
+
+    if(tail.length === 1){
+      qty = tail[0].qty;
+      unit = tail[0].unit;
+    }else if(tail.length === 2){
+      const a = tail[0], b = tail[1];
+      const aLen = isLengthUnit(a.unit), bLen = isLengthUnit(b.unit);
+      const aCnt = isCountUnit(a.unit), bCnt = isCountUnit(b.unit);
+
+      if(aLen && bCnt){
+        qty = a.qty; unit = a.unit;
+        extraCount = `${b.qty}${b.unit}`;
+      }else if(bLen && aCnt){
+        qty = b.qty; unit = b.unit;
+        extraCount = `${a.qty}${a.unit}`;
+      }else{
+        qty = b.qty; unit = b.unit;
+        extraCount = `${a.qty}${a.unit}`;
+      }
+    }
+
+    // 4) spec 추출 (100*25 / 500 300 200 / 28C 등)
     let spec = "";
 
-    const idxMul = tokens.findIndex(t => /[xX×\*]/.test(t) && /\d/.test(t));
+    const idxMul = remainTokens.findIndex(t => /[xX×\*]/.test(t) && /\d/.test(t));
     if(idxMul >= 0){
-      spec = tokens[idxMul];
-      tokens.splice(idxMul,1);
+      spec = remainTokens[idxMul];
+      remainTokens.splice(idxMul,1);
     }else{
-      for(let i=0; i<=tokens.length-2; i++){
-        if(/^\d+(?:\.\d+)?$/.test(tokens[i]) && /^\d+(?:\.\d+)?$/.test(tokens[i+1])){
-          const t3 = tokens[i+2];
+      for(let i=0; i<=remainTokens.length-2; i++){
+        if(/^\d+(?:\.\d+)?$/.test(remainTokens[i]) && /^\d+(?:\.\d+)?$/.test(remainTokens[i+1])){
+          const t3 = remainTokens[i+2];
           if(t3 && /^\d+(?:\.\d+)?$/.test(t3)){
-            spec = `${tokens[i]} ${tokens[i+1]} ${t3}`;
-            tokens.splice(i,3);
+            spec = `${remainTokens[i]} ${remainTokens[i+1]} ${t3}`;
+            remainTokens.splice(i,3);
           }else{
-            spec = `${tokens[i]} ${tokens[i+1]}`;
-            tokens.splice(i,2);
+            spec = `${remainTokens[i]} ${remainTokens[i+1]}`;
+            remainTokens.splice(i,2);
           }
           break;
         }
@@ -609,37 +690,44 @@
     }
 
     if(!spec){
-      const idx = tokens.findIndex(t => /^\d+(?:\.\d+)?(C|MM)$/i.test(t));
+      const idx = remainTokens.findIndex(t => /^\d+(?:\.\d+)?(C|MM)$/i.test(t));
       if(idx >= 0){
-        spec = tokens[idx];
-        tokens.splice(idx,1);
+        spec = remainTokens[idx];
+        remainTokens.splice(idx,1);
       }
     }
 
-    if(!spec && tokens.length >= 2){
-      const last = tokens[tokens.length - 1];
-      const isSingleNumber = /^\d+(?:\.\d+)?$/.test(last);
-      if(isSingleNumber){
-        const candWith = tokens.join(" ").trim();
-        const candWithout = tokens.slice(0, -1).join(" ").trim();
+    // 5) 남은 것은 자재명
+    let materialInput = remainTokens.join(" ").trim();
 
-        const mWith = mapMaterial(candWith);
-        const mWithout = mapMaterial(candWithout);
-
-        const score = (c) => (c==="정확"?4 : c==="포함"?3 : c==="유사"?2 : c==="원문"?1 : 0);
-
-        if(score(mWithout.confidence) > score(mWith.confidence)){
-          spec = last;
-          tokens = tokens.slice(0,-1);
-        }
-      }
+    if(extraCount){
+      note = attachExtraToNote(note, `수량: ${extraCount}`);
     }
 
-    const materialInput = tokens.join(" ").trim();
-    return { materialInput, spec, qty, unit, note };
+    // ✅ 핵심: pairs가 있으면 "한 줄에서 여러 자재" 생성 (spec에 '400×6EA' 같은 형태로 넣음)
+    if(pairs.length){
+      return pairs.map(p => ({
+        _raw: raw,
+        materialInput,
+        spec: `${p.size}×${p.qty}${p.unit}`,
+        qty: "",     // 중복 표기 방지(이미 spec에 EA가 들어있음)
+        unit: "EA",
+        note
+      }));
+    }
+
+    // pairs가 없으면 기존 1개
+    return [{
+      _raw: raw,
+      materialInput,
+      spec,
+      qty,
+      unit,
+      note
+    }];
   }
 
-  const LS_KEY = "worklog_offline_multiwork_all_v6_bulk_preview_edit_commit";
+  const LS_KEY = "worklog_offline_multiwork_all_v8_bulk_pairs_fix";
   const state = { works: [] };
 
   function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
@@ -652,9 +740,8 @@
       areaDetail:"",
       bulk:"",
       showDetail:false,
-      // ✅ 빠른입력 미리보기 데이터(확정 전)
-      bulkPreview: [],
-      showPreview:false,
+      showBulkList:false,
+      bulkLinks: [], // [{ idx, raw }]
       items:[ newMaterial() ],
     };
   }
@@ -689,9 +776,8 @@
       (w.groups||[]).forEach(g=>{
         if(typeof g.bulk !== "string") g.bulk = "";
         if(typeof g.showDetail !== "boolean") g.showDetail = false;
-        if(!Array.isArray(g.bulkPreview)) g.bulkPreview = [];
-        if(typeof g.showPreview !== "boolean") g.showPreview = false;
-
+        if(typeof g.showBulkList !== "boolean") g.showBulkList = false;
+        if(!Array.isArray(g.bulkLinks)) g.bulkLinks = [];
         (g.items||[]).forEach(it=>{
           if(it.unit === "M") it.unit = "m";
           if(it.unit === "MM") it.unit = "mm";
@@ -721,6 +807,67 @@
 
   function ensureWorkHasAtLeastOneGroup(w){
     if(!Array.isArray(w.groups) || w.groups.length === 0) w.groups = [ newGroup() ];
+  }
+
+  function renderBulkListCards(g){
+    const links = Array.isArray(g.bulkLinks) ? g.bulkLinks : [];
+    const items = Array.isArray(g.items) ? g.items : [];
+
+    const alive = links.filter(x => Number.isInteger(x.idx) && items[x.idx]);
+    if(alive.length !== links.length){
+      g.bulkLinks = alive;
+    }
+
+    if(alive.length === 0){
+      return `<div class="hint">적용된 항목이 없습니다.</div>`;
+    }
+
+    return alive.map((ln, pi) => {
+      const it = items[ln.idx];
+      return `
+        <div class="previewCard" data-li="${pi}">
+          <div class="previewTop">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <span class="kbadge">#${pi+1}</span>
+              <span class="kbadge" title="원문">${esc(ln.raw||"")}</span>
+              <span class="kbadge" title="내부 인덱스">IDX:${ln.idx}</span>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn small danger js-delBulkLinked" type="button">삭제</button>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="field tone-violet span6" style="grid-column: span 6;">
+              <label>자재명</label>
+              <input class="js-li-mat" data-idx="${ln.idx}" value="${esc(it.materialInput||"")}" />
+            </div>
+
+            <div class="field tone-amber span3" style="grid-column: span 3;">
+              <label>규격(Spec)</label>
+              <input class="js-li-spec" data-idx="${ln.idx}" value="${esc(it.spec||"")}" />
+            </div>
+
+            <div class="field tone-green span2" style="grid-column: span 2;">
+              <label>수량</label>
+              <input class="js-li-qty" data-idx="${ln.idx}" value="${esc(it.qty||"")}" inputmode="decimal" />
+            </div>
+
+            <div class="field tone-green span1" style="grid-column: span 1;">
+              <label>단위</label>
+              <select class="js-li-unit" data-idx="${ln.idx}">
+                ${UNIT_OPTIONS.map(u => `<option value="${u}" ${u===it.unit ? "selected":""}>${u}</option>`).join("")}
+              </select>
+            </div>
+
+            <div class="field tone-slate span12" style="grid-column: span 12;">
+              <label>구간/비고</label>
+              <input class="js-li-note" data-idx="${ln.idx}" value="${esc(it.note||"")}" />
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
   }
 
   function render(){
@@ -791,7 +938,7 @@
         groupEl.dataset.g = String(gi);
 
         if(g.showDetail) groupEl.classList.add("showDetail");
-        if(g.showPreview) groupEl.classList.add("showPreview");
+        if(g.showBulkList) groupEl.classList.add("showBulkList");
 
         const itemCount = (g.items || []).length;
 
@@ -816,102 +963,59 @@
 
           <div class="hr"></div>
 
-          <div class="bulkWrap">
+          <div class="bar">
+            <div class="hint">
+              빠른입력: <b>규격×수량EA</b> 여러 개면 자동 분해<br/>
+              예) <b>U-CHANNEL 400×6EA 200×50EA</b><br/>
+              작업/가공 등은 자동으로 비고로 들어갑니다.
+            </div>
+            <div class="barRight">
+              <button class="btn small js-applyBulk" type="button">빠른입력 적용</button>
+              <button class="btn small danger js-clearBulk" type="button">지우기</button>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="field tone-slate span12" style="grid-column: span 12;">
+              <label>대량 입력</label>
+              <textarea class="js-bulk bulkTA" placeholder="예)
+상부 플랫폼 LIGHTING SUPPORT 가공
+U CHANNEL 400×6EA 200×50EA
+WELDING 작업
+L-040 SUPPORT 3EA
+U-CHANNEL 400×3EA 200×24EA
+WELDING 30 POINT">${esc(g.bulk||"")}</textarea>
+            </div>
+          </div>
+
+          <div class="bulkList">
+            <div class="hr"></div>
             <div class="bar">
-              <div class="hint">
-                빠른입력: <b>한 줄=자재 1건</b> · 같은 자재 반복이면 <b>자재명 생략 가능</b>
-              </div>
+              <div class="hint">✅ 방금 적용된 목록(여기서 수정하면 즉시 반영됩니다)</div>
               <div class="barRight">
-                <button class="btn small js-applyBulk" type="button">빠른입력 적용</button>
-                <button class="btn small danger js-clearBulk" type="button">지우기</button>
+                <button class="btn small ghost js-hideBulkList" type="button">접기</button>
               </div>
             </div>
 
-            <div class="grid">
-              <div class="field tone-slate span12" style="grid-column: span 12;">
-                <label>대량 입력</label>
-                <textarea class="js-bulk bulkTA" placeholder="예)
-전선관 28C 3000MM
-전선관 36C 4000MM
-104C 1000MM
-TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
-              </div>
-            </div>
-
-            <div class="bulkPreview">
-              <div class="hr"></div>
-              <div class="bar">
-                <div class="hint">✅ 적용 미리보기(수정 가능) → <b>확정</b>을 누르면 상세 데이터로 반영됩니다.</div>
-                <div class="barRight">
-                  <button class="btn small js-commitPreview" type="button">확정</button>
-                  <button class="btn small danger js-cancelPreview" type="button">취소</button>
-                </div>
-              </div>
-
-              <div class="works" style="gap:10px;">
-                ${(g.bulkPreview||[]).map((p, pi) => `
-                  <div class="previewCard" data-pi="${pi}">
-                    <div class="previewTop">
-                      <div class="left">
-                        <span class="kbadge">#${pi+1}</span>
-                        <span class="kbadge" title="원문">${esc(p._raw||"")}</span>
-                      </div>
-                      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <button class="btn small danger js-delPreview" type="button">삭제</button>
-                      </div>
-                    </div>
-
-                    <div class="grid">
-                      <div class="field tone-violet span6" style="grid-column: span 6;">
-                        <label>자재명</label>
-                        <input class="js-p-mat" value="${esc(p.materialInput||"")}" placeholder="예: 전선관 / TRAY" />
-                      </div>
-
-                      <div class="field tone-amber span3" style="grid-column: span 3;">
-                        <label>규격(Spec)</label>
-                        <input class="js-p-spec" value="${esc(p.spec||"")}" placeholder="예: 28C / 300" />
-                      </div>
-
-                      <div class="field tone-green span2" style="grid-column: span 2;">
-                        <label>수량</label>
-                        <input class="js-p-qty" value="${esc(p.qty||"")}" placeholder="예: 12" inputmode="decimal" />
-                      </div>
-
-                      <div class="field tone-green span1" style="grid-column: span 1;">
-                        <label>단위</label>
-                        <select class="js-p-unit">
-                          ${UNIT_OPTIONS.map(u => `<option value="${u}" ${u===p.unit ? "selected":""}>${u}</option>`).join("")}
-                        </select>
-                      </div>
-
-                      <div class="field tone-slate span12" style="grid-column: span 12;">
-                        <label>구간/비고</label>
-                        <input class="js-p-note" value="${esc(p.note||"")}" placeholder="예: Column 8~25" />
-                      </div>
-                    </div>
-                  </div>
-                `).join("")}
-              </div>
+            <div class="works" style="gap:10px;">
+              ${renderBulkListCards(g)}
             </div>
           </div>
 
           <div class="detailWrap">
             <div class="hr"></div>
-
             <div class="bar">
-              <div class="hint">상세 입력: 개별 수정/추가/삭제</div>
+              <div class="hint">상세 입력(개별 카드)</div>
               <div class="barRight">
                 <button class="btn small js-addMatInGroup" type="button">자재 추가</button>
               </div>
             </div>
-
             <div class="items js-items"></div>
           </div>
         `;
 
         groupsHost.appendChild(groupEl);
 
-        // 상세 items 렌더(상세 열었을 때만 유의미하지만, 데이터는 항상 유지)
         const itemsHost = groupEl.querySelector(".js-items");
         (g.items || []).forEach((it, ii) => {
           const mapped = mapMaterial(it.materialInput);
@@ -933,13 +1037,13 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
           itemEl.innerHTML = `
             <div class="itemGrid">
               <div class="field tone-violet full" style="grid-column: span 3;">
-                <label>자재명(자유 입력)</label>
-                <input class="js-mat" placeholder="예: 전선관 / TRAY / U찬넬" value="${esc(it.materialInput||"")}" />
+                <label>자재명</label>
+                <input class="js-mat" value="${esc(it.materialInput||"")}" />
               </div>
 
               <div class="field tone-blue full" style="grid-column: span 2;">
-                <label>표준 자재명(수정 가능)</label>
-                <input class="js-canon" placeholder="예: STEEL CONDUIT" value="${esc(it.canonical||"")}" />
+                <label>표준 자재명</label>
+                <input class="js-canon" value="${esc(it.canonical||"")}" />
               </div>
 
               <div class="field tone-slate half" style="grid-column: span 1;">
@@ -951,12 +1055,12 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
 
               <div class="field tone-amber half" style="grid-column: span 2;">
                 <label>규격(Spec)</label>
-                <input class="js-spec" placeholder="예: 28C / 600*150*3000 / 300" value="${esc(it.spec||"")}" />
+                <input class="js-spec" value="${esc(it.spec||"")}" />
               </div>
 
               <div class="field tone-green half" style="grid-column: span 1;">
                 <label>수량</label>
-                <input class="js-qty" inputmode="decimal" placeholder="예: 3 / 3000" value="${esc(it.qty||"")}" />
+                <input class="js-qty" inputmode="decimal" value="${esc(it.qty||"")}" />
               </div>
 
               <div class="field tone-green half" style="grid-column: span 1;">
@@ -967,13 +1071,13 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
               </div>
 
               <div class="field tone-slate full" style="grid-column: span 11;">
-                <label>구간/비고(선택)</label>
-                <input class="js-note" placeholder="예: Column 8~25 / 설치 / 철거" value="${esc(it.note||"")}" />
+                <label>구간/비고</label>
+                <input class="js-note" value="${esc(it.note||"")}" />
               </div>
 
               <div class="btnBar" style="grid-column: span 1; display:flex; gap:8px; justify-content:flex-end;">
                 <button class="btn small ghost js-meta" type="button">상세</button>
-                <button class="btn small js-auto" type="button" title="자동 제안 적용">자동</button>
+                <button class="btn small js-auto" type="button">자동</button>
                 <button class="btn small js-dup" type="button">복제</button>
                 <button class="btn small danger js-delItem" type="button">삭제</button>
               </div>
@@ -1023,12 +1127,11 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
         out.push("■ 추가 작업");
       }
 
-      const drawing = (w.drawing || "").trim();
-      out.push(`도면 : ${drawing}`);
+      out.push(`도면 : ${(w.drawing||"").trim()}`);
 
       const baseArea = (w.area || "").trim();
-
       const groups = Array.isArray(w.groups) ? w.groups : [];
+
       groups.forEach((g, gi) => {
         const areaDetail = (g.areaDetail || "").trim();
         const areaLine = [baseArea, areaDetail].filter(Boolean).join(" ").trim();
@@ -1056,7 +1159,7 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
           if(mat) parts.push(mat);
           if(specPretty) parts.push(specPretty);
           if(qtyPart) parts.push(qtyPart);
-          if(note) parts.push(`(구간: ${note})`);
+          if(음표) parts.push(`(구간: ${note})`);
 
           out.push(parts.join(" ").replace(/\s+/g," ").trim());
           n++;
@@ -1113,10 +1216,6 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
     });
   }
 
-  function ensureWorkHasAtLeastOneGroup(w){
-    if(!Array.isArray(w.groups) || w.groups.length === 0) w.groups = [ newGroup() ];
-  }
-
   function bindDynamic(){
     const host = $("#works");
 
@@ -1157,6 +1256,13 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
           return;
         }
 
+        if(e.target.closest(".js-hideBulkList")){
+          g.showBulkList = false;
+          saveLS();
+          render();
+          return;
+        }
+
         if(e.target.closest(".js-delGroup")){
           w.groups.splice(gi, 1);
           ensureWorkHasAtLeastOneGroup(w);
@@ -1175,15 +1281,15 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
 
         if(e.target.closest(".js-clearBulk")){
           g.bulk = "";
-          g.bulkPreview = [];
-          g.showPreview = false;
+          g.bulkLinks = [];
+          g.showBulkList = false;
           saveLS();
           render();
           toast("대량 입력을 지웠습니다.");
           return;
         }
 
-        // ✅ 빠른입력 적용 => items에 바로 넣지 않고, bulkPreview 생성 후 표시
+        // ✅ 빠른입력 적용(핵심 수정): 한 줄에서 여러 item 분해 + 자재명 상속
         if(e.target.closest(".js-applyBulk")){
           const ta = groupEl.querySelector(".js-bulk");
           const bulk = (ta?.value || "").trim();
@@ -1191,94 +1297,58 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
             toast("대량 입력 내용이 없습니다.");
             return;
           }
+
           const lines = bulk.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
           if(lines.length === 0){
             toast("대량 입력 내용이 없습니다.");
             return;
           }
 
-          const preview = [];
+          g.items = g.items || [];
+          g.bulkLinks = [];
+          g.bulk = bulk;
+
           let lastMaterialInput = "";
 
           for(const line of lines){
-            const parsed = parseBulkLine(line);
-            if(!parsed) continue;
+            const parsedItems = parseBulkLineToItems(line);
+            if(!parsedItems.length) continue;
 
-            if(!parsed.materialInput && lastMaterialInput){
-              parsed.materialInput = lastMaterialInput; // 상속
+            for(const parsed of parsedItems){
+              // 자재명 없으면 상속
+              if(!parsed.materialInput && lastMaterialInput){
+                parsed.materialInput = lastMaterialInput;
+              }
+              if(parsed.materialInput){
+                lastMaterialInput = parsed.materialInput;
+              }
+              if(!parsed.materialInput){
+                continue; // 첫 줄부터 자재명 비면 스킵
+              }
+
+              const it = newMaterial();
+              it.materialInput = parsed.materialInput;
+              it.spec = parsed.spec;
+              it.qty = parsed.qty;
+              it.unit = parsed.unit || "EA";
+              it.note = parsed.note || "";
+
+              const mapped = mapMaterial(it.materialInput);
+              if(mapped.canonical){
+                it.canonical = mapped.canonical;
+                it.category = mapped.category || "OTHER";
+              }else{
+                it.canonical = (it.materialInput||"").toUpperCase();
+                it.category = "OTHER";
+              }
+
+              const idx = g.items.length;
+              g.items.push(it);
+              g.bulkLinks.push({ idx, raw: parsed._raw || line });
             }
-            if(parsed.materialInput){
-              lastMaterialInput = parsed.materialInput;
-            }
-            if(!parsed.materialInput) continue;
-
-            preview.push({
-              _raw: line,
-              materialInput: parsed.materialInput,
-              spec: parsed.spec,
-              qty: parsed.qty,
-              unit: parsed.unit || "EA",
-              note: parsed.note || "",
-            });
           }
 
-          if(preview.length === 0){
-            toast("인식 가능한 항목이 없습니다.");
-            return;
-          }
-
-          g.bulk = bulk;
-          g.bulkPreview = preview;
-          g.showPreview = true;
-          saveLS();
-          render();
-          toast(`미리보기 ${preview.length}건 생성`);
-          return;
-        }
-
-        // ✅ 미리보기 삭제
-        if(e.target.closest(".js-delPreview")){
-          const card = e.target.closest(".previewCard");
-          const pi = Number(card?.dataset.pi);
-          if(Number.isNaN(pi)) return;
-          g.bulkPreview.splice(pi, 1);
-          if(g.bulkPreview.length === 0) g.showPreview = false;
-          saveLS();
-          render();
-          toast("미리보기 항목을 삭제했습니다.");
-          return;
-        }
-
-        // ✅ 미리보기 확정 => bulkPreview를 items로 반영
-        if(e.target.closest(".js-commitPreview")){
-          if(!Array.isArray(g.bulkPreview) || g.bulkPreview.length === 0){
-            toast("확정할 미리보기가 없습니다.");
-            return;
-          }
-
-          g.items = g.items || [];
-
-          for(const p of g.bulkPreview){
-            const it = newMaterial();
-            it.materialInput = (p.materialInput||"").trim();
-            it.spec = (p.spec||"").trim();
-            it.qty = (p.qty||"").trim();
-            it.unit = (p.unit||"EA").trim();
-            it.note = (p.note||"").trim();
-
-            const mapped = mapMaterial(it.materialInput);
-            if(mapped.canonical){
-              it.canonical = mapped.canonical;
-              it.category = mapped.category || "OTHER";
-            }else{
-              it.canonical = (it.materialInput||"").toUpperCase();
-              it.category = "OTHER";
-            }
-
-            g.items.push(it);
-          }
-
-          // 첫 빈행 제거
+          // 첫번째 빈 카드 제거
           if(g.items.length > 1){
             g.items = g.items.filter((x, idx) => {
               if(idx === 0){
@@ -1289,25 +1359,37 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
             });
           }
 
-          g.bulkPreview = [];
-          g.showPreview = false;
-          g.showDetail = true; // 확정 후 바로 상세 열어주는 게 수정하기 편함
+          g.showBulkList = true;
+
           saveLS();
           render();
-          toast("미리보기를 확정하여 상세 데이터에 반영했습니다.");
+          toast(`적용 완료: ${g.bulkLinks.length}건`);
           return;
         }
 
-        // ✅ 미리보기 취소
-        if(e.target.closest(".js-cancelPreview")){
-          g.bulkPreview = [];
-          g.showPreview = false;
+        // ✅ 아래 리스트에서 삭제
+        if(e.target.closest(".js-delBulkLinked")){
+          const card = e.target.closest(".previewCard");
+          const li = Number(card?.dataset.li);
+          if(Number.isNaN(li)) return;
+          const link = g.bulkLinks?.[li];
+          if(!link) return;
+
+          g.items.splice(link.idx, 1);
+
+          g.bulkLinks = (g.bulkLinks || [])
+            .filter((x, i) => i !== li)
+            .map(x => ({ ...x, idx: x.idx > link.idx ? x.idx - 1 : x.idx }));
+
+          if(g.bulkLinks.length === 0) g.showBulkList = false;
+
           saveLS();
           render();
-          toast("미리보기를 취소했습니다.");
+          toast("항목을 삭제했습니다.");
           return;
         }
 
+        // 상세 item 버튼
         const itemEl = e.target.closest(".item");
         if(itemEl){
           const ii = Number(itemEl.dataset.i);
@@ -1322,6 +1404,10 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
           if(e.target.closest(".js-delItem")){
             g.items.splice(ii, 1);
             if(g.items.length === 0) g.items.push(newMaterial());
+            g.bulkLinks = (g.bulkLinks || [])
+              .map(x => ({...x, idx: x.idx > ii ? x.idx - 1 : x.idx}))
+              .filter(x => x.idx !== ii);
+            if(g.bulkLinks.length === 0) g.showBulkList = false;
             render();
             toast("자재를 삭제했습니다.");
             return;
@@ -1330,6 +1416,7 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
           if(e.target.closest(".js-dup")){
             const copy = JSON.parse(JSON.stringify(it));
             g.items.splice(ii+1, 0, copy);
+            g.bulkLinks = (g.bulkLinks || []).map(x => ({...x, idx: x.idx > ii ? x.idx + 1 : x.idx}));
             render();
             toast("자재를 복제했습니다.");
             return;
@@ -1350,7 +1437,6 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
       }
     });
 
-    // ✅ 미리보기 입력 반영(그룹 bulkPreview 배열 직접 업데이트)
     host.addEventListener("input", (e) => {
       const workEl = e.target.closest(".work");
       if(!workEl) return;
@@ -1391,30 +1477,47 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
         saveLS();
         return;
       }
-
       if(e.target.classList.contains("js-bulk")){
         g.bulk = e.target.value;
         saveLS();
         return;
       }
 
-      // 미리보기 카드 편집
-      const pCard = e.target.closest(".previewCard");
-      if(pCard){
-        const pi = Number(pCard.dataset.pi);
-        if(Number.isNaN(pi) || !g.bulkPreview?.[pi]) return;
-        const p = g.bulkPreview[pi];
+      // ✅ 아래 리스트 수정 → item에 반영
+      const idxAttr = e.target.getAttribute("data-idx");
+      if(idxAttr !== null){
+        const idx = Number(idxAttr);
+        const it = g.items?.[idx];
+        if(!it) return;
 
-        if(e.target.classList.contains("js-p-mat"))  p.materialInput = e.target.value;
-        if(e.target.classList.contains("js-p-spec")) p.spec = e.target.value;
-        if(e.target.classList.contains("js-p-qty"))  p.qty = e.target.value;
-        if(e.target.classList.contains("js-p-note")) p.note = e.target.value;
-
-        saveLS();
-        return;
+        if(e.target.classList.contains("js-li-mat")){
+          it.materialInput = e.target.value;
+          const mapped = mapMaterial(it.materialInput);
+          if(!it.lockAuto && mapped.canonical){
+            it.canonical = mapped.canonical;
+            it.category  = mapped.category || "OTHER";
+          }
+          saveLS();
+          return;
+        }
+        if(e.target.classList.contains("js-li-spec")){
+          it.spec = e.target.value;
+          saveLS();
+          return;
+        }
+        if(e.target.classList.contains("js-li-qty")){
+          it.qty = e.target.value;
+          saveLS();
+          return;
+        }
+        if(e.target.classList.contains("js-li-note")){
+          it.note = e.target.value;
+          saveLS();
+          return;
+        }
       }
 
-      // 상세 item 수정
+      // 상세 item 입력
       const itemEl = e.target.closest(".item");
       if(!itemEl) return;
       const ii = Number(itemEl.dataset.i);
@@ -1450,11 +1553,9 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
       if(e.target.classList.contains("js-canon")){
         it.canonical = e.target.value;
         it.lockAuto = true;
-
         const row = e.target.closest(".item");
         const chipLock = row?.querySelector(".js-chipLock");
         if(chipLock) chipLock.innerHTML = `<b>자동잠금</b> ON`;
-
         saveLS();
         return;
       }
@@ -1502,23 +1603,20 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
       const g = (w.groups || [])[gi];
       if(!g) return;
 
-      // 미리보기 unit 변경
-      const pCard = e.target.closest(".previewCard");
-      if(pCard){
-        const pi = Number(pCard.dataset.pi);
-        if(Number.isNaN(pi) || !g.bulkPreview?.[pi]) return;
-        const p = g.bulkPreview[pi];
-        if(e.target.classList.contains("js-p-unit")){
-          p.unit = e.target.value;
-          saveLS();
-        }
+      // 아래 리스트 unit 변경
+      const idxAttr = e.target.getAttribute("data-idx");
+      if(idxAttr !== null && e.target.classList.contains("js-li-unit")){
+        const idx = Number(idxAttr);
+        const it = g.items?.[idx];
+        if(!it) return;
+        it.unit = e.target.value;
+        saveLS();
         return;
       }
 
-      // 상세 item unit/cat 변경
+      // 상세 item
       const itemEl = e.target.closest(".item");
       if(!itemEl) return;
-
       const ii = Number(itemEl.dataset.i);
       const it = (g.items || [])[ii];
       if(!it) return;
@@ -1541,57 +1639,11 @@ TRAY 300 3m (Column 8~25)">${esc(g.bulk||"")}</textarea>
     });
   }
 
-  function bindStaticButtons(){
-    $("#btnAddWork").addEventListener("click", addWork);
-
-    $("#btnSaveAll").addEventListener("click", () => {
-      saveLS();
-      toast("저장했습니다. (이 기기 저장)");
-    });
-
-    $("#btnGenerateAll").addEventListener("click", () => {
-      $("#output").value = generateOutputAllWorks();
-      toast("전체 작업 결과를 생성했습니다.");
-    });
-
-    $("#btnCopy").addEventListener("click", async () => {
-      const text = $("#output").value || generateOutputAllWorks();
-      $("#output").value = text;
-      await copyToClipboard(text);
-    });
-
-    $("#btnReset").addEventListener("click", () => {
-      const ok = confirm("이 기기에 저장된 모든 데이터가 삭제됩니다. 계속할까요?");
-      if(!ok) return;
-      localStorage.removeItem(LS_KEY);
-      location.reload();
-    });
-  }
-
   // Boot
   load();
   render();
   bindStaticButtons();
   bindDynamic();
-
-  async function copyToClipboard(text){
-    try{
-      await navigator.clipboard.writeText(text);
-      toast("클립보드에 복사했습니다.");
-      return true;
-    }catch(e){
-      const out = $("#output");
-      out.focus(); out.select();
-      try{
-        document.execCommand("copy");
-        toast("복사했습니다. (호환 모드)");
-        return true;
-      }catch(_){
-        toast("복사 실패: 직접 선택 후 복사하세요.");
-        return false;
-      }
-    }
-  }
 })();
 </script>
 </body>
