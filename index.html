@@ -325,10 +325,10 @@
         <div class="sub">서버 없이 사용 · 기기(LocalStorage) 저장
 빠른입력: 한 줄=자재 1건(또는 규격×수량EA 세트 여러 개면 자동 분해)
 자재명 안 쓰면 직전 자재명 자동 상속
-✅ 추가: 도면번호만 있는 줄은 도면칸 자동 입력 / 구역명은 작업구역상세 자동 입력
-예) U-CHANNEL 400×6EA 200×50EA
+✅ 도면번호만 있는 줄은 도면칸 자동 입력
+✅ 구역 라인 오판 방지(자재/수량/키워드가 있으면 구역으로 안봄)
 예) U찬넬41 → U-CHANNEL + Spec=41
-예) U찬넬 / (다음줄) 260 2개  → U찬넬 상속 + Spec=260 Qty=2EA</div>
+예) 260 2개 → 직전 자재 상속 + Spec=260 + Qty=2EA</div>
       </div>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -393,8 +393,13 @@
   const CATEGORY_OPTIONS = ["TRAY","CONDUIT","ELP","SUPPORT","U-CHANNEL","C-CHANNEL","ANGLE","FITTING","BOX","FASTENER","PAINT","OTHER"];
   const DEFAULT_AREAS = ["PIPE RACK","전기실 1층","전기실 2층","SUBSTATION","UG","TK AREA","에틸렌 B구역"];
 
+  // FIX: 구역 오판 방지용 키워드(짧은 라인이라도 이게 들어가면 "자재/작업"으로 보고 구역 처리 금지)
+  const NOT_AREA_KEYWORDS = [
+    "찬넬","채널","유니스트럿","스트럿","전선관","스틸","파이프","트레이","서포트","시트","박스","라운드박스","풀박스",
+    "용접","그라인더","가공","제단","취부","설치","양중","등"
+  ];
+
   const MATERIAL_DICT = [
-    // FIX: 스틸파이프 -> STEEL CONDUIT
     { aliases:["전선관","스틸 전선관","스틸파이프","스틸 파이프","STEEL PIPE","STEELPIPE","STEEL CONDUIT","STEEL CONDUIT PIPE","CONDUIT","CONDUIT PIPE"], canonical:"STEEL CONDUIT", category:"CONDUIT"},
     { aliases:["CD","CD관","CD PIPE","CD CONDUIT"], canonical:"CD CONDUIT", category:"CONDUIT"},
     { aliases:["후렉시블","후렉쉬블","FLEX","FLEXIBLE","FLEXIBLE CONDUIT"], canonical:"FLEXIBLE CONDUIT", category:"CONDUIT"},
@@ -411,7 +416,10 @@
     { aliases:["U찬넬","U 찬넬","U-CHANNEL","U CHANNEL","UNISTRUT","유니스트럿","STRUT CHANNEL"], canonical:"U-CHANNEL", category:"U-CHANNEL"},
     { aliases:["C찬넬","C 찬넬","C-CHANNEL","C CHANNEL","찬넬","채널","CHANNEL"], canonical:"C-CHANNEL", category:"C-CHANNEL"},
 
-    // 작업류(원하면 삭제 가능)
+    { aliases:["JB 시트","JB SHEET","JB SHEET PLATE","JB PLATE","JB SHEET"], canonical:"JB SHEET", category:"OTHER"},
+    { aliases:["비상등","EMERGENCY LIGHT"], canonical:"EMERGENCY LIGHT", category:"OTHER"},
+    { aliases:["일반등","NORMAL LIGHT","LIGHT"], canonical:"LIGHT", category:"OTHER"},
+
     { aliases:["용접","용접작업","WELDING"], canonical:"WELDING", category:"OTHER"},
     { aliases:["그라인더","그라인더작업","GRINDER","GRINDING"], canonical:"GRINDING", category:"OTHER"},
   ];
@@ -534,7 +542,7 @@
     return ["m","mm","M","MM"].includes((u||"").toString());
   }
 
-  // FIX: 6포인트/4개 붙여쓰기 포함
+  // FIX: 6포인트/4개 붙여쓰기 포함 + "개/포인트" 단위 흡수
   function parseQtyUnitToken(token){
     const t0 = (token||"").trim();
     if(!t0) return null;
@@ -568,8 +576,8 @@
     const s = (t||"").trim();
     if(!s) return false;
     const up = s.toUpperCase();
-    return ["작업","가공","설치","철거","보강","제작","수정","가설","해체","제단","양중"].includes(s)
-      || ["WORK","FAB","FABRICATE","INSTALL","REMOVE"].includes(up);
+    return ["작업","가공","설치","철거","보강","제작","수정","가설","해체","제단","양중","취부"].includes(s)
+      || ["WORK","FAB","FABRICATE","INSTALL","REMOVE","MOUNT"].includes(up);
   }
 
   function parseSizeCountPairs(tokens){
@@ -591,55 +599,93 @@
     return pairs;
   }
 
-  // FIX: 도면번호만 있는 줄 판정
   function isDrawingOnlyLine(line){
     const s = (line||"").trim();
     if(!s) return false;
-    // 예: 2153-EL-LRL-0017 / 2153-EL-LRL / 2153-EL-LRL-0017 REV.1 등은 사용자 케이스가 많아서 넉넉히
-    // "숫자-영문-영문-..." 형태, 공백 없이 대부분 구성
     return /^[0-9]{2,}[-][A-Z0-9]+(?:[-][A-Z0-9]+)+$/i.test(s.replace(/\s+/g,""));
   }
 
-  // FIX: "구역/장소"로 볼 라인(짧고, 수량/단위/규격 패턴이 아니고, 도면도 아닌 것)
+  // FIX: 수량/단위 존재 여부를 더 정확히 판단(붙여쓰기 포함)
+  function lineHasQtyUnit(line){
+    const s = (line||"").trim();
+    if(!s) return false;
+
+    // 띄어쓰기 있는 경우: "6 포인트", "1 개"
+    if(/\d+(?:\.\d+)?\s*(EA|본|m|mm|SET|POINT|ROLL|PCS|개|포인트)(?:\s|$)/i.test(s)) return true;
+
+    // 붙여쓰기: "6포인트", "2개", "1EA"
+    if(/\d+(?:\.\d+)?(EA|본|m|mm|SET|POINT|ROLL|PCS|개|포인트)(?:\s|$)/i.test(s)) return true;
+
+    // 토큰 단위로도 검사
+    const toks = s.split(/\s+/).filter(Boolean);
+    return toks.some(t => !!parseQtyUnitToken(t));
+  }
+
+  function lineHasNotAreaKeyword(line){
+    const s = (line||"").trim();
+    if(!s) return false;
+    return NOT_AREA_KEYWORDS.some(k => s.includes(k));
+  }
+
+  // FIX: 구역 라인 판정 강화(자재/작업/수량/키워드 있으면 구역 처리 금지)
   function isLikelyAreaLine(line){
     const s = (line||"").trim();
     if(!s) return false;
     if(isDrawingOnlyLine(s)) return false;
 
-    // 너무 길면 자재 문장일 확률이 큼
-    if(s.length > 30) return false;
+    // 너무 길면 자재/문장일 확률 ↑
+    if(s.length > 26) return false;
 
-    // 수량/단위가 명확하면 자재로 봄
-    if(/\d+(?:\.\d+)?\s*(EA|본|m|mm|SET|POINT|ROLL|PCS|개|포인트)\b/i.test(s)) return false;
+    // 자재/작업 키워드 있으면 구역 아님
+    if(lineHasNotAreaKeyword(s)) return false;
 
-    // 규격/세트 형태면 자재로 봄
+    // 수량/단위가 있으면 구역 아님
+    if(lineHasQtyUnit(s)) return false;
+
+    // 규격/세트(×,* 등)면 구역 아님
     if(/[xX×\*]/.test(s) && /\d/.test(s)) return false;
 
-    // 순수 숫자/코드면 area 아님
+    // 순수 숫자면 구역 아님
     if(/^\d+(?:\.\d+)?$/.test(s)) return false;
 
-    // "A/C계단", "탱크상부", "전기실" 같은 건 여기로 들어오게
+    // "U찬넬41" 같은 건 키워드로 걸러졌으니 여기서 true가 될 수 있음 -> 위에서 이미 false 처리됨
     return true;
   }
 
-  // FIX: 숫자 위주(또는 숫자+수량) 라인은 "규격만"으로 처리해서 자재 상속
   function isSpecOnlyLine(line){
     const s = (line||"").trim();
     if(!s) return false;
-    if(/[A-Za-z가-힣]/.test(s)) return false; // 글자 있으면 spec-only 아님(단, C코드 같은 건 별도)
-    // 예: "260", "260 2개", "200 2개", "350 1개", "41"
+    if(/[A-Za-z가-힣]/.test(s)) return false;
     return /^(\d+(?:\.\d+)?)(\s+\d+(?:\.\d+)?\s*(EA|본|m|mm|SET|POINT|ROLL|PCS|개|포인트))?$/.test(s);
   }
 
-  // FIX: 자재명에 붙은 규격 분리 (U찬넬41 / U-CHANNEL41 / STEELCONDUIT28 등)
+  // FIX: "14C-2B 라운드박스 1개" → spec=14C-2B, material="라운드박스 ..."
+  function splitLeadingCodeAsSpec(main){
+    const s = (main||"").trim();
+    if(!s) return null;
+
+    // 맨 앞이 코드(예: 14C-2B / 14C-2N) + 공백 + 나머지
+    const m = s.match(/^([0-9]+[A-Za-z]?(?:-[0-9A-Za-z]+)+)\s+(.+)$/);
+    if(!m) return null;
+
+    const code = m[1].trim();
+    const rest = m[2].trim();
+
+    // 도면으로 오인 방지: 뒤에 자재/수량이 있으면 여기로
+    if(isDrawingOnlyLine(s)) return null;
+
+    // rest에 자재 키워드가 있어야만 적용(라운드박스 등)
+    if(!lineHasNotAreaKeyword(rest) && !/박스|BOX|ROUND|PULL/i.test(rest)) return null;
+
+    return { leadingSpec: code, rest };
+  }
+
+  // FIX: 자재명에 붙은 규격 분리 (U찬넬41 등)
   function splitMaterialAndInlineSpec(materialInput, currentSpec){
     let m = (materialInput||"").trim();
     let spec = (currentSpec||"").trim();
     if(!m || spec) return { materialInput: m, spec };
 
-    const up = normalizeText(m);
-
-    // 1) U/C-CHANNEL 계열: 뒤에 숫자 붙은 경우
     let mm = m.match(/^(.*?)(\d+(?:\.\d+)?)(C)?$/i);
     if(mm){
       const head = (mm[1]||"").trim();
@@ -647,45 +693,38 @@
       const suf  = (mm[3]||"").trim();
       if(head && head.length >= 2){
         const headMap = mapMaterial(head);
-        // head만으로도 자재 인식되면 spec로 분리
         if(headMap && headMap.canonical){
           return { materialInput: head, spec: `${num}${suf||""}`.trim() };
         }
-        // U찬넬/채널 같은 키워드 강제 분리
         const headUp = normalizeText(head);
-        if(headUp.includes("찬넬") || headUp.includes("CHANNEL") || headUp.includes("UNISTRUT") || headUp.includes("CONDUIT")){
+        if(headUp.includes("찬넬") || headUp.includes("CHANNEL") || headUp.includes("UNISTRUT") || headUp.includes("CONDUIT") || headUp.includes("박스") || headUp.includes("BOX")){
           return { materialInput: head, spec: `${num}${suf||""}`.trim() };
         }
       }
     }
-
     return { materialInput: m, spec };
   }
 
-  // ✅ 한 줄에서 "자재 여러 개" 만들 수 있게: 배열 반환
-  // FIX: lastMaterialInput 전달 받아 spec-only 라인 처리
   function parseBulkLineToItems(line, lastMaterialInput){
     const raw = (line||"").trim();
     if(!raw) return [];
 
-    // (구간: ... ) 끝 처리
     let note = "";
     let main = raw;
+
     const paren = raw.match(/\((.*?)\)\s*$/);
     if(paren){
       note = (paren[1]||"").replace(/^구간\s*:\s*/,"").trim();
       main = raw.slice(0, paren.index).trim();
     }
 
-    // FIX: spec-only 라인 처리 (자재 상속 + spec=숫자)
+    // spec-only
     if(isSpecOnlyLine(main) && lastMaterialInput){
-      // "260 2개" 같이 들어오면 spec=260, qty=2EA
       const toks = main.split(/\s+/).filter(Boolean);
       const spec0 = toks[0];
       let qty = "", unit = "EA";
       if(toks.length >= 2){
-        // 두 번째가 "2개" or "2EA" 등
-        const qu = parseQtyUnitToken(toks[1]) || null;
+        const qu = parseQtyUnitToken(toks[1]);
         if(qu){
           qty = qu.qty;
           unit = qu.unit;
@@ -701,12 +740,22 @@
       }];
     }
 
+    // leading code spec
+    const lead = splitLeadingCodeAsSpec(main);
+    if(lead){
+      // main을 rest로 바꾸고 spec는 leadingSpec로 강제 주입
+      main = lead.rest;
+      // note에 code를 넣지 않고 spec에 넣기 위해 후단에서 spec 우선 처리
+      // 여기서는 임시로 prefixSpec로 들고감
+      var prefixSpec = lead.leadingSpec;
+    }else{
+      var prefixSpec = "";
+    }
+
     let tokens = main.replace(/\t+/g," ").split(/\s+/).filter(Boolean);
 
-    // 1) "규격×수량EA" 세트 여러 개 추출
     const pairs = parseSizeCountPairs(tokens);
 
-    // 2) 작업/가공 등의 단어를 note로 이동
     const noteTokens = [];
     const remainTokens = [];
     for(const t of tokens){
@@ -722,7 +771,6 @@
       note = attachExtraToNote(note, noteTokens.join(" "));
     }
 
-    // 3) tail qty/unit 최대 2개 추출
     const tail = [];
     for(let i=remainTokens.length-1; i>=0 && tail.length<2; i--){
       const q = parseQtyUnitToken(remainTokens[i]);
@@ -736,7 +784,6 @@
       const firstIdx = tail[0]._idx;
       remainTokens.splice(firstIdx, remainTokens.length - firstIdx);
     }else{
-      // "30 POINT" / "7 포인트" / "4 개" 형태(띄어쓰기)
       if(remainTokens.length >= 2){
         const n = remainTokens[remainTokens.length-2];
         const u = remainTokens[remainTokens.length-1];
@@ -772,7 +819,6 @@
       }
     }
 
-    // 4) spec 추출
     let spec = "";
 
     const idxMul = remainTokens.findIndex(t => /[xX×\*]/.test(t) && /\d/.test(t));
@@ -803,14 +849,17 @@
       }
     }
 
-    // 5) 남은 것은 자재명
-    let materialInput = remainTokens.join(" ").trim();
+    // prefixSpec(예: 14C-2B) 우선 적용
+    if(prefixSpec){
+      if(spec) note = attachExtraToNote(note, `추가규격:${spec}`);
+      spec = prefixSpec;
+    }
 
+    let materialInput = remainTokens.join(" ").trim();
     if(extraCount){
       note = attachExtraToNote(note, `수량: ${extraCount}`);
     }
 
-    // FIX: 자재명이 비어도 라인을 버리지 않게 fallback
     if(!materialInput){
       const fallback = main.replace(/\s+/g," ").trim();
       if(fallback){
@@ -818,12 +867,10 @@
       }
     }
 
-    // FIX: 자재명에 붙은 규격 분리
     const split = splitMaterialAndInlineSpec(materialInput, spec);
     materialInput = split.materialInput;
     spec = split.spec;
 
-    // ✅ pairs가 있으면 한 줄에서 여러 항목 생성
     if(pairs.length){
       return pairs.map(p => ({
         _raw: raw,
@@ -845,7 +892,7 @@
     }];
   }
 
-  const LS_KEY = "worklog_offline_multiwork_all_v9_auto_drawing_area_spec_inherit";
+  const LS_KEY = "worklog_offline_multiwork_all_v10_area_fix_qty_glued_code_spec";
   const state = { works: [] };
 
   function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
@@ -1086,10 +1133,7 @@
           <div class="bar">
             <div class="hint">
               빠른입력: <b>규격×수량EA</b> 여러 개면 자동 분해<br/>
-              예) <b>U-CHANNEL 400×6EA 200×50EA</b><br/>
-              ✅ 도면번호만 있는 줄은 도면칸 자동 입력<br/>
-              ✅ 구역명(짧은 라인)은 작업구역 상세 자동 입력<br/>
-              ✅ 숫자만(또는 숫자+수량) 라인은 직전 자재 상속+spec 처리
+              ✅ 구역 오판 방지 적용됨(자재/수량/키워드 있으면 구역 처리 안함)
             </div>
             <div class="barRight">
               <button class="btn small js-applyBulk" type="button">빠른입력 적용</button>
@@ -1101,12 +1145,11 @@
             <div class="field tone-slate span12" style="grid-column: span 12;">
               <label>대량 입력</label>
               <textarea class="js-bulk bulkTA" placeholder="예)
-2153-EL-LRL-0017
-A/C계단
+2153-EL-LRL-0018
+E/G계단
+그라인더작업 6포인트
 U찬넬41
-260 2개
-200 2개
-WELDING 7포인트">${esc(g.bulk||"")}</textarea>
+260 2개">${esc(g.bulk||"")}</textarea>
             </div>
           </div>
 
@@ -1281,7 +1324,6 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
           if(mat) parts.push(mat);
           if(specPretty) parts.push(specPretty);
           if(qtyPart) parts.push(qtyPart);
-          // FIX: 치명 버그 (음표 -> note)
           if(note) parts.push(`(구간: ${note})`);
 
           out.push(parts.join(" ").replace(/\s+/g," ").trim());
@@ -1431,19 +1473,16 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
           g.bulk = bulk;
 
           let lastMaterialInput = "";
-          // FIX: area 라인 누적용
           let areaAcc = (g.areaDetail || "").trim();
 
           for(const line of lines){
 
-            // FIX: 도면번호만 있는 줄이면 도면에 세팅하고 스킵
             if(isDrawingOnlyLine(line)){
               w.drawing = line.trim();
               pushUnique(w.history.drawings, w.drawing, 120);
               continue;
             }
 
-            // FIX: 구역(장소) 라인이면 작업구역 상세에 누적하고 스킵
             if(isLikelyAreaLine(line)){
               const s = line.trim();
               if(areaAcc){
@@ -1455,12 +1494,10 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
               continue;
             }
 
-            // FIX: lastMaterialInput을 parse로 전달 (spec-only 처리)
             const parsedItems = parseBulkLineToItems(line, lastMaterialInput);
             if(!parsedItems.length) continue;
 
             for(const parsed of parsedItems){
-              // 자재명 없으면 상속
               if(!parsed.materialInput && lastMaterialInput){
                 parsed.materialInput = lastMaterialInput;
               }
@@ -1471,7 +1508,6 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
                 continue;
               }
 
-              // FIX: 자재명에 붙은 규격 분리(최종 보정)
               const sp2 = splitMaterialAndInlineSpec(parsed.materialInput, parsed.spec);
               parsed.materialInput = sp2.materialInput;
               parsed.spec = sp2.spec;
@@ -1498,7 +1534,6 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
             }
           }
 
-          // 첫번째 빈 카드 제거
           if(g.items.length > 1){
             g.items = g.items.filter((x, idx) => {
               if(idx === 0){
@@ -1663,70 +1698,6 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
           return;
         }
       }
-
-      const itemEl = e.target.closest(".item");
-      if(!itemEl) return;
-      const ii = Number(itemEl.dataset.i);
-      const it = (g.items || [])[ii];
-      if(!it) return;
-
-      if(e.target.classList.contains("js-mat")){
-        it.materialInput = e.target.value;
-        const mapped = mapMaterial(it.materialInput);
-
-        const row = e.target.closest(".item");
-        const canonInput = row?.querySelector(".js-canon");
-        const catSelect  = row?.querySelector(".js-cat");
-        const chipMap    = row?.querySelector(".js-chipMap");
-        const chipLock   = row?.querySelector(".js-chipLock");
-
-        if(!it.lockAuto){
-          if(mapped.canonical){
-            it.canonical = mapped.canonical;
-            it.category  = mapped.category || "OTHER";
-            if(canonInput) canonInput.value = it.canonical;
-            if(catSelect)  catSelect.value  = it.category;
-          }
-        }
-
-        if(chipMap)  chipMap.innerHTML  = `<b>매핑</b> ${esc(mapped.confidence || "-")}`;
-        if(chipLock) chipLock.innerHTML = `<b>자동잠금</b> ${it.lockAuto ? "ON" : "OFF"}`;
-
-        saveLS();
-        return;
-      }
-
-      if(e.target.classList.contains("js-canon")){
-        it.canonical = e.target.value;
-        it.lockAuto = true;
-        const row = e.target.closest(".item");
-        const chipLock = row?.querySelector(".js-chipLock");
-        if(chipLock) chipLock.innerHTML = `<b>자동잠금</b> ON`;
-        saveLS();
-        return;
-      }
-
-      if(e.target.classList.contains("js-spec")){
-        it.spec = e.target.value;
-        const row = e.target.closest(".item");
-        const chipSpec = row?.querySelector(".js-chipSpec");
-        const pretty = parseSpec(it.spec).pretty;
-        if(chipSpec) chipSpec.innerHTML = `<b>규격</b> ${esc(pretty || "-")}`;
-        saveLS();
-        return;
-      }
-
-      if(e.target.classList.contains("js-qty")){
-        it.qty = e.target.value;
-        saveLS();
-        return;
-      }
-
-      if(e.target.classList.contains("js-note")){
-        it.note = e.target.value;
-        saveLS();
-        return;
-      }
     });
 
     host.addEventListener("change", (e) => {
@@ -1758,32 +1729,9 @@ WELDING 7포인트">${esc(g.bulk||"")}</textarea>
         saveLS();
         return;
       }
-
-      const itemEl = e.target.closest(".item");
-      if(!itemEl) return;
-      const ii = Number(itemEl.dataset.i);
-      const it = (g.items || [])[ii];
-      if(!it) return;
-
-      if(e.target.classList.contains("js-cat")){
-        it.category = e.target.value;
-        it.lockAuto = true;
-        const row = e.target.closest(".item");
-        const chipLock = row?.querySelector(".js-chipLock");
-        if(chipLock) chipLock.innerHTML = `<b>자동잠금</b> ON`;
-        saveLS();
-        return;
-      }
-
-      if(e.target.classList.contains("js-unit")){
-        it.unit = e.target.value;
-        saveLS();
-        return;
-      }
     });
   }
 
-  // Boot
   load();
   render();
   bindStaticButtons();
