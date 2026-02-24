@@ -276,7 +276,7 @@
       white-space: pre-line;
     }
 
-    /* ✅ 칸별 색(톤) — 원복 */
+    /* ✅ 칸별 색(톤) */
     .tone-blue   input, .tone-blue   select { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.35); }
     .tone-green  input, .tone-green  select { background: rgba(16,185,129,.11); border-color: rgba(16,185,129,.32); }
     .tone-amber  input, .tone-amber  select { background: rgba(245,158,11,.11); border-color: rgba(245,158,11,.30); }
@@ -324,13 +324,14 @@
       <div class="title">
         <h1>오프라인 물량/작업 보고</h1>
         <div class="sub">서버 없이 사용 · 기기(LocalStorage) 저장
-빠른입력: 한 줄=자재 1건(또는 규격×수량EA 세트 여러 개면 자동 분해)
+빠른입력: 한 줄=자재 1건 (또는 규격×수량EA 세트 여러 개면 자동 분해)
 자재명 안 쓰면 직전 자재명 자동 상속
 예) 전선관 28c 10m
 예) 36c 25m (직전 자재명 상속)
 예) U찬넬41
     260 2개
-    200 2개  (숫자 라인도 직전 자재명 상속)</div>
+    200 2개 (숫자 라인도 직전 자재명 상속)
+문장부호(콤마/마침표) 붙어도 파싱</div>
       </div>
     </div>
 
@@ -398,7 +399,7 @@
   const DEFAULT_AREAS = ["PIPE RACK","전기실 1층","전기실 2층","SUBSTATION","UG","TK AREA","에틸렌 B구역"];
 
   const MATERIAL_DICT = [
-    // ✅ 스틸파이프 → STEEL CONDUIT 포함
+    // ✅ 스틸파이프/스틸 파이프 → STEEL CONDUIT 포함
     { aliases:["전선관","스틸 전선관","스틸파이프","스틸 파이프","STEEL PIPE","STEELPIPE","STEEL CONDUIT","STEEL CONDUIT PIPE","CONDUIT","CONDUIT PIPE"], canonical:"STEEL CONDUIT", category:"CONDUIT"},
     { aliases:["CD","CD관","CD PIPE","CD CONDUIT"], canonical:"CD CONDUIT", category:"CONDUIT"},
     { aliases:["후렉시블","후렉쉬블","FLEX","FLEXIBLE","FLEXIBLE CONDUIT"], canonical:"FLEXIBLE CONDUIT", category:"CONDUIT"},
@@ -412,7 +413,8 @@
     { aliases:["라운드박스","ROUND BOX"], canonical:"ROUND BOX", category:"BOX"},
     { aliases:["풀박스","PULL BOX","FULL BOX"], canonical:"PULL BOX", category:"BOX"},
     { aliases:["도장","페인트","PAINT","COATING"], canonical:"PAINT", category:"PAINT"},
-    { aliases:["U찬넬","U 찬넬","U-CHANNEL","U CHANNEL","UNISTRUT","유니스트럿","STRUT CHANNEL"], canonical:"U-CHANNEL", category:"U-CHANNEL"},
+    // ✅ U찬넬 / U찬넬41 / U CHANNEL 등
+    { aliases:["U찬넬","U 찬넬","U-CHANNEL","U CHANNEL","UNISTRUT","유니스트럿","STRUT CHANNEL","UNICSTRUT"], canonical:"U-CHANNEL", category:"U-CHANNEL"},
     { aliases:["C찬넬","C 찬넬","C-CHANNEL","C CHANNEL","찬넬","채널","CHANNEL"], canonical:"C-CHANNEL", category:"C-CHANNEL"},
   ];
 
@@ -459,10 +461,10 @@
   }
 
   function isConduitCodeOnly(raw){
-    // 28C, 36c 같은 것만 들어온 케이스
     return /^\d+(?:\.\d+)?\s*C$/i.test((raw||"").trim());
   }
 
+  // ✅ U찬넬41 같이 숫자 붙은 케이스를 위해: 끝 숫자 제거 버전도 함께 매칭
   function mapMaterial(input){
     const raw = (input||"").trim();
     if(!raw) return { canonical:"", category:"", confidence:"" };
@@ -472,24 +474,26 @@
     }
 
     const up = normalizeText(raw);
+    const up2 = up.replace(/\d+$/g, "").trim(); // ✅ 끝 숫자 제거
     const compact = up.replace(/[\s\-_/]/g, "");
+    const compact2 = up2.replace(/[\s\-_/]/g, "");
 
     for(const entry of MATERIAL_DICT){
       for(const a of entry.aliases){
         const au = normalizeText(a);
-        if(up === au) return { canonical: entry.canonical, category: entry.category, confidence:"정확" };
+        if(up === au || up2 === au) return { canonical: entry.canonical, category: entry.category, confidence:"정확" };
       }
     }
     for(const entry of MATERIAL_DICT){
       for(const a of entry.aliases){
         const au = normalizeText(a);
-        if(au && up.includes(au)) return { canonical: entry.canonical, category: entry.category, confidence:"포함" };
+        if(au && (up.includes(au) || up2.includes(au))) return { canonical: entry.canonical, category: entry.category, confidence:"포함" };
       }
     }
     for(const entry of MATERIAL_DICT){
       for(const a of entry.aliases){
         const au = normalizeText(a).replace(/[\s\-_/]/g, "");
-        if(au && compact.includes(au)) return { canonical: entry.canonical, category: entry.category, confidence:"유사" };
+        if(au && (compact.includes(au) || compact2.includes(au))) return { canonical: entry.canonical, category: entry.category, confidence:"유사" };
       }
     }
     return { canonical: raw.toUpperCase(), category:"OTHER", confidence:"원문" };
@@ -551,7 +555,7 @@
     return ["m","mm","M","MM"].includes((u||"").toString());
   }
 
-  // ✅ FIX: 콤마/기호 붙은 토큰도 파싱 + "개/포인트" 한글 처리
+  // ✅ 콤마/기호 붙은 토큰도 파싱 + "개/포인트" 한글 처리
   function parseQtyUnitToken(token){
     const t = cleanToken(token);
     if(!t) return null;
@@ -581,13 +585,13 @@
     return `${n} / ${e}`;
   }
 
-  // ✅ 작업/가공 같은 키워드는 note로 이동 (WELDING은 note로 취급하지 않음)
+  // ✅ 작업/가공/취부/양중 등 note로 이동
   function isWordNoteToken(t){
     const s = (t||"").trim();
     if(!s) return false;
     const up = s.toUpperCase();
     return ["작업","가공","설치","철거","보강","제작","수정","가설","해체","취부","양중","제단"].includes(s)
-        || ["WORK","FAB","FABRICATE","INSTALL","REMOVE","MOUNT"].includes(up);
+        || ["WORK","FAB","FABRICATE","INSTALL","REMOVE","MOUNT","HOIST"].includes(up);
   }
 
   // ✅ "400×6EA" / "200x24EA" 같은 세트(여러 개 가능) 파싱
@@ -689,7 +693,7 @@
       note = attachExtraToNote(note, noteTokens.join(" "));
     }
 
-    // 3) tail qty/unit 최대 2개 추출 (300MM 8EA 같은 케이스 포함)
+    // 3) tail qty/unit 최대 2개 추출
     const tail = [];
     for(let i=remainTokens.length-1; i>=0 && tail.length<2; i--){
       const q = parseQtyUnitToken(remainTokens[i]);
@@ -707,8 +711,8 @@
       if(remainTokens.length >= 2){
         const n = remainTokens[remainTokens.length-2];
         const u = remainTokens[remainTokens.length-1];
-        if(/^\d+(?:\.\d+)?$/.test(n) && parseQtyUnitToken(n + u)){
-          const qu = parseQtyUnitToken(n + u);
+        const qu = parseQtyUnitToken(n + u);
+        if(/^\d+(?:\.\d+)?$/.test(n) && qu){
           tail.push({ qty: qu.qty, unit: qu.unit });
           remainTokens.splice(remainTokens.length-2,2);
         }
@@ -739,7 +743,7 @@
       }
     }
 
-    // 4) spec 추출 (100*25 / 500 300 200 / 28C 등)
+    // 4) spec 추출
     let spec = "";
 
     const idxMul = remainTokens.findIndex(t => /[xX×\*]/.test(t) && /\d/.test(t));
@@ -803,8 +807,8 @@
   }
 
   // ✅ 저장키 분리: 작성내용 / 자동입력 이력
-  const LS_DATA_KEY = "worklog_offline_data_v12";
-  const LS_AUTO_KEY = "worklog_offline_auto_v12";
+  const LS_DATA_KEY = "worklog_offline_data_v13";
+  const LS_AUTO_KEY = "worklog_offline_auto_v13";
 
   const state = {
     works: [],
@@ -1075,9 +1079,11 @@
             <div class="field tone-slate span12" style="grid-column: span 12;">
               <label>대량 입력</label>
               <textarea class="js-bulk bulkTA" placeholder="예)
-전선관 28c 10m
-36c 25m
-후렉시블 36c 1point">${esc(g.bulk||"")}</textarea>
+전선관 36C 10M
+28C 10M
+후렉시블 36C 1point
+U찬넬41
+260 2개">${esc(g.bulk||"")}</textarea>
             </div>
           </div>
 
@@ -1208,7 +1214,7 @@
     toast("구역을 추가했습니다.");
   }
 
-  // ✅ FIX: note 변수로 출력(기존 음표 오타 제거)
+  // ✅ FIX: note 변수로 출력(이전 음표 오타 제거 완료)
   function generateOutputAllWorks(){
     const out = [];
     out.push(todayISOWithKoreanDay());
@@ -1307,7 +1313,6 @@
       const ok = confirm("작성내용(작업/자재/대량입력)이 초기화됩니다.\n도면/공정지역 자동입력 이력은 유지됩니다.\n계속할까요?");
       if(!ok) return;
       localStorage.removeItem(LS_DATA_KEY);
-      // auto는 유지
       state.works = [ newWork() ];
       const today = todayISO();
       state.works.forEach(x => x.date = today);
@@ -1401,7 +1406,7 @@
           return;
         }
 
-        // ✅ 빠른입력 적용: 상속 + spec-only(36c 25m, 260 2개) + 콤마 처리
+        // ✅ 빠른입력 적용 (핵심 FIX: "빈 기본카드 제거"를 적용 후에 하지 말고, 적용 전에만 처리)
         if(e.target.closest(".js-applyBulk")){
           const ta = groupEl.querySelector(".js-bulk");
           const bulk = (ta?.value || "").trim();
@@ -1416,9 +1421,16 @@
             return;
           }
 
-          g.items = g.items || [];
+          g.items = Array.isArray(g.items) ? g.items : [];
           g.bulkLinks = [];
           g.bulk = bulk;
+
+          // ✅ FIX: 기존에 있던 "빈 기본카드 1개"면, 적용 전에 제거하고 시작 (인덱스 꼬임 방지)
+          if(g.items.length === 1){
+            const x = g.items[0];
+            const empty = !x.materialInput && !x.spec && !x.qty && !x.note;
+            if(empty) g.items = [];
+          }
 
           let lastMaterialInput = "";
 
@@ -1458,17 +1470,6 @@
               g.items.push(it);
               g.bulkLinks.push({ idx, raw: parsed._raw || line });
             }
-          }
-
-          // 첫번째 빈 카드 제거
-          if(g.items.length > 1){
-            g.items = g.items.filter((x, idx) => {
-              if(idx === 0){
-                const empty = !x.materialInput && !x.spec && !x.qty && !x.note;
-                return !empty;
-              }
-              return true;
-            });
           }
 
           g.showBulkList = true;
@@ -1604,7 +1605,12 @@
         if(e.target.classList.contains("js-li-mat")){
           it.materialInput = e.target.value;
           const mapped = mapMaterial(it.materialInput);
-          if(!it.lockAuto && mapped.canonical){
+          // ✅ 매핑 가능하면 lockAuto라도 자동 갱신(사용자가 직접 표준자재명 고정하고 싶으면 표준자재명을 직접 입력하면 됨)
+          if(mapped.canonical && mapped.confidence !== "원문"){
+            it.canonical = mapped.canonical;
+            it.category  = mapped.category || "OTHER";
+            it.lockAuto = false;
+          }else if(!it.lockAuto && mapped.canonical){
             it.canonical = mapped.canonical;
             it.category  = mapped.category || "OTHER";
           }
@@ -1635,6 +1641,7 @@
       const it = (g.items || [])[ii];
       if(!it) return;
 
+      // ✅ 자재명 입력 시: 매핑 가능하면 자동 갱신(잠금보다 매핑 우선)
       if(e.target.classList.contains("js-mat")){
         it.materialInput = e.target.value;
         const mapped = mapMaterial(it.materialInput);
@@ -1645,8 +1652,14 @@
         const chipMap    = row?.querySelector(".js-chipMap");
         const chipLock   = row?.querySelector(".js-chipLock");
 
-        if(!it.lockAuto){
-          if(mapped.canonical){
+        if(mapped.canonical && mapped.confidence !== "원문"){
+          it.canonical = mapped.canonical;
+          it.category  = mapped.category || "OTHER";
+          it.lockAuto = false;
+          if(canonInput) canonInput.value = it.canonical;
+          if(catSelect)  catSelect.value  = it.category;
+        }else{
+          if(!it.lockAuto && mapped.canonical){
             it.canonical = mapped.canonical;
             it.category  = mapped.category || "OTHER";
             if(canonInput) canonInput.value = it.canonical;
@@ -1701,7 +1714,7 @@
       const w = state.works.find(x => x.id === workId);
       if(!w) return;
 
-      // ✅ 자동완성 이력: drawings/areas를 별도 저장
+      // ✅ 자동완성 이력: drawings/areas 별도 저장
       if(e.target.classList.contains("js-drawing")){
         pushUnique(state.auto.drawings, w.drawing, 200);
         saveLS();
